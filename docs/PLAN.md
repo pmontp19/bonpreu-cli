@@ -57,7 +57,7 @@ Ordered by dependency. Each ≤ ~5 files, one focused session.
   - Verify: httptest asserts signed-delta body + path; guard math unit tests; live add/remove/set→0 restored.
   - Files: `internal/api/cart.go`, `internal/cli/cart.go`, `internal/cli/guard.go`
 
-- [ ] **T6 — Delivery + slots**
+- [x] **T6 — Delivery + slots**  ✅ 2026-06-30 (httptest: addresses query, v2 grid flatten w/ availability, reservation body; session-default dest/region, fail-closed on missing)
   - Acceptance: `delivery addresses --method home|cc`; `slots --group home|cc` flattens the v2 grid; `slots reserve <id>`; both `--json`.
   - Verify: httptest on slots v2 grid fixture; live `slots` for both groups.
   - Files: `internal/api/delivery.go`, `internal/cli/delivery.go`

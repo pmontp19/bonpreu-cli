@@ -51,6 +51,7 @@ func NewRoot(version string) *cobra.Command {
 		return nil
 	}
 	root.AddCommand(newImportHarCmd(), newWhoamiCmd(), newSearchCmd(),
-		newProductCmd(), newCategoriesCmd(), newRelatedCmd(), newCartCmd())
+		newProductCmd(), newCategoriesCmd(), newRelatedCmd(), newCartCmd(),
+		newDeliveryCmd(), newSlotsCmd())
 	return root
 }
