@@ -19,11 +19,11 @@ import (
 func newCartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "cart",
-		Short:         "Cart operations (get/add/remove/set/clear)",
+		Short:         "Cart operations (get/add/remove/set/clear/voucher)",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	cmd.AddCommand(newCartGetCmd(), newCartAddCmd(), newCartAddManyCmd(), newCartRemoveCmd(), newCartSetCmd(), newCartClearCmd())
+	cmd.AddCommand(newCartGetCmd(), newCartAddCmd(), newCartAddManyCmd(), newCartRemoveCmd(), newCartSetCmd(), newCartClearCmd(), newCartVoucherCmd())
 	return cmd
 }
 
@@ -299,6 +299,45 @@ func newCartClearCmd() *cobra.Command {
 				return err
 			}
 			return printCart(ctx, rt, cart)
+		},
+	}
+}
+
+func newCartVoucherCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:           "voucher <code> [<code>...]",
+		Short:         "Apply discount/voucher code(s) to the cart",
+		Args:          cobra.MinimumNArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			rt := ctxValue(ctx)
+			results, err := api.ApplyVouchers(ctx, rt.client, args)
+			if err != nil {
+				return err
+			}
+			if rt.json {
+				return printJSON(results)
+			}
+			var invalid []string
+			for _, r := range results {
+				status := "invalid"
+				if r.Valid {
+					status = "applied"
+				} else {
+					invalid = append(invalid, r.VoucherID)
+				}
+				if r.ValidationErrorCode != "" {
+					fmt.Fprintf(os.Stdout, "%s: %s (%s)\n", r.VoucherID, status, r.ValidationErrorCode)
+				} else {
+					fmt.Fprintf(os.Stdout, "%s: %s\n", r.VoucherID, status)
+				}
+			}
+			if len(invalid) > 0 {
+				return fmt.Errorf("invalid voucher(s): %s", strings.Join(invalid, ", "))
+			}
+			return nil
 		},
 	}
 }

@@ -249,6 +249,15 @@ func extractInitialState(html string) (string, bool) {
 	return extractStateObject(html, "window.__INITIAL_STATE__=")
 }
 
+// ExtractAppState is the exported form of extractInitialState, for scraping
+// `window.__INITIAL_STATE__` off any server-rendered page (e.g. the
+// customer/loyalty state on /settings/loyalty). Unlike ExtractInitialState,
+// it does not prefer `__QUERY_INITIAL_STATE__` — that blob holds the
+// React-Query product cache, not account state.
+func ExtractAppState(html string) (string, bool) {
+	return extractInitialState(html)
+}
+
 func extractStateObject(html, marker string) (string, bool) {
 	idx := strings.Index(html, marker)
 	if idx < 0 {

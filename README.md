@@ -13,9 +13,13 @@ API surface is reverse-engineered and documented in [`docs/bonpreu-api-discovery
 ## Quickstart
 
 ```sh
-# 1. Install (requires Go; or `go build -o bin/bonpreu ./cmd/bonpreu` from a clone).
-#    Installs to $(go env GOPATH)/bin — make sure that's on your PATH.
+# 1. Install — pick one:
+npx bonpreu-cli --help                  # no install, downloads a prebuilt binary
+npm install -g bonpreu-cli              # or install globally
+
+#    Or with Go (requires Go; installs to $(go env GOPATH)/bin — make sure that's on your PATH):
 go install github.com/pmontp19/bonpreu-cli/cmd/bonpreu@latest
+#    Or from a clone: go build -o bin/bonpreu ./cmd/bonpreu
 
 # 2. Log in at compraonline.bonpreuesclat.cat in a browser, export a HAR,
 #    then import the session (writes ~/.bonpreu/*, 0600):
@@ -48,6 +52,7 @@ State lives under `~/.bonpreu/` (override with `BONPREU_HOME`): `cookies.json` (
 ```sh
 bonpreu import-har --file login.har   # parse a HAR export, save cookies+csrf (0600)
 bonpreu whoami                        # verify the session, print cart summary
+bonpreu loyalty                       # Guardiola (loyalty wallet) balance
 ```
 
 **Catalog**
@@ -66,6 +71,10 @@ bonpreu cart remove <id> [qty=1]
 bonpreu cart set <id> <qty>
 bonpreu cart add-many [-f file|-]        # JSON-lines: {"id":..,"qty":..} per line
 bonpreu cart clear
+bonpreu cart voucher <code> [<code>...]  # apply discount/voucher code(s)
+bonpreu favorites list                   # starred products ("Preferits")
+bonpreu regulars list                    # frequently-bought products ("Productes recurrents")
+bonpreu regulars fill                    # auto-fill the cart from purchase history ("Compra ràpida")
 ```
 
 **Delivery**

@@ -619,6 +619,28 @@ GET /api/webproductpagews/v5/product-pages?limit=30&offset=0&tag=web&tag=lihp
 
 ---
 
+##### POST `/api/cart/v1/carts/active/vouchers`
+**Purpose:** Apply discount/voucher code(s) to the active cart.
+**Visibility:** Authenticated
+**Status:** ✅ IMPLEMENTED 2026-07-01 (`bonpreu cart voucher <code>...`) — confirmed via HAR capture (button: voucher input on `/checkout/summary`).
+
+**Request body:** array of code strings, e.g. `["TEST5"]`.
+
+**Response:**
+```json
+{
+  "pricingNotifications": [],
+  "vouchersAddResult": [
+    {"inBasket": false, "newlyAdded": false, "valid": false, "validationErrorCode": "CODE_NOT_FOUND", "voucherId": "test5"}
+  ]
+}
+```
+- One `vouchersAddResult` entry per submitted code — a mix of valid/invalid codes in one call is not an error, each is reported independently. `voucherId` in the response is lowercased regardless of the casing submitted.
+- Only the invalid-code path (`CODE_NOT_FOUND`) was captured live; a successful application's exact `vouchersAddResult` shape (whether it carries a discount amount inline, or that only shows up in the cart's `totals` on the next `GET /carts/active`) is unconfirmed — the CLI surfaces the raw result either way and doesn't assume more than `valid`/`newlyAdded`/`inBasket`/`validationErrorCode`.
+- No remove-voucher endpoint has been captured yet.
+
+---
+
 #### Orders
 
 ##### GET `/api/order/v6/orders`
@@ -664,6 +686,44 @@ GET /api/webproductpagews/v5/product-pages?limit=30&offset=0&tag=web&tag=lihp
 ```
 
 **Note:** `expired` reflects card expiry (past `expiryMonth`/`expiryYear`), not session/token expiry. Listing is read-only and does not touch the Braintree/3DS payment flow, which stays out of scope (see SPEC.md).
+
+---
+
+#### Loyalty (Guardiola)
+
+##### GET `/settings/loyalty` — no JSON API, SSR-only
+**Purpose:** Guardiola (loyalty wallet) balance
+**Visibility:** Authenticated
+**Status:** ✅ IMPLEMENTED 2026-07-01 (`bonpreu loyalty`) — confirmed via HAR capture: no XHR/fetch to any `/api/*` path carries this data on page load.
+
+- The balance is **server-rendered only**, embedded in `window.__INITIAL_STATE__.data.customer.loyalty` on the `/settings/loyalty` document response — same mechanism as the homepage's CSRF token (see above), just a different page and a different sub-tree.
+- Shape: `{"error":null,"fetchError":false,"isFetching":false,"lastUpdated":<epoch ms>,"lastModified":null,"balance":{"units":461,"money":{"amount":"4.61","currency":"EUR"}},"registered":true}`. `units` is the amount in cents; `money.amount` is the same value pre-formatted as a decimal string.
+- **The CLI must GET the full HTML page and scrape it** (`client.ExtractAppState`, the `__INITIAL_STATE__`-only sibling of `ExtractInitialState` used for product-page scraping) — there is no lighter JSON endpoint.
+
+---
+
+#### Regulars, Favorites ("Preferits") & Instant Shop ("Compra ràpida")
+
+##### GET `/api/webproductpagews/v5/product-pages/regulars?limit=<n>&tag=web&tag=regulars`
+**Purpose:** Backs *both* the "Productes recurrents" tab and "Preferits" ("Favorites") — one call returns both lists.
+**Visibility:** Authenticated
+**Status:** ✅ IMPLEMENTED 2026-07-01 (`bonpreu regulars list`, `bonpreu favorites list`) — confirmed via HAR capture.
+
+- Response: `{"productGroups":[{"type":"regular","products":[...]}, {"type":"favorite","products":[...]}]}`. Each `products[]` entry is `{"productId":"<uuid>", "product": {...full decorated product, only if within budget...}}`.
+- **`limit` caps total decoration across *all* groups combined, not per group.** With `limit=50` and 14 "regular" + 286 "favorite" items on a real account, only the first 50 entries (14 regular + first 36 favorite) carried the nested `product` object; the remaining 250 favorites came back as bare `{"productId":"..."}` with no `product` key at all.
+- ⚠️ **Do not rely on the page's partial decoration for favorites.** `bonpreu favorites list` always re-fetches every returned `productId` via `PUT /api/webproductpagews/v6/products` (same batch endpoint cart/regulars enrichment already uses) — confirmed live: a single PUT with all 286 ids in one call returns all 286 decorated, no chunking needed.
+- The "regular" group's `product.regular` sub-object carries `{"quantity":<int>, "frequency":"WEEKLY"|"FORTNIGHTLY"}` — this is what `InstantShop` (below) draws from. The "favorite" group has no such field (a favorite is a plain star, not a purchase-frequency signal).
+- Plainer alternative for regulars only (no decoration, no favorites): `GET /api/regulars/v1/regulars` → `[{"productId","quantity","frequency"}]`. Not used by the CLI since the decorated endpoint above already gives names/prices in one call for the "regular" group.
+
+##### POST `/api/cart/v2/instant-shop`
+**Purpose:** "Compra ràpida" — server-side picks products from purchase history and adds them to the active cart in one shot.
+**Visibility:** Authenticated
+**Status:** ✅ IMPLEMENTED 2026-07-01 (`bonpreu regulars fill`) — confirmed via HAR capture (button: "Afegeix els productes a la cistella").
+
+- **Request:** empty JSON object `{}` — no way to preview or influence what gets added.
+- **Response:** `{"addedProducts":[{"productId","quantity"},...], "basketUpdateResult":{"items":[...],"lastModified","totals":{...}}, "limitedPromotionIds":[], "pricingNotifications":[]}`.
+- ⚠️ `basketUpdateResult` here is **items** (flat array), not `itemGroups` like `apply-quantity`'s response — a different shape from the `Cart` struct used elsewhere. The CLI reads only `addedProducts` and `basketUpdateResult.totals.itemPriceAfterPromos` from it; it does not try to force this into the `Cart`/`Lines()` model.
+- Since the server decides what to add, the CLI's `--max` spending guard can't do its usual pre-flight check (no known delta before the call). It instead calls the endpoint, and if the resulting total exceeds `--max`, immediately reverses exactly `addedProducts` via `apply-quantity` with negated quantities and reports a refusal — enforcement after the fact rather than before, since there is no dry-run.
 
 ---
 
