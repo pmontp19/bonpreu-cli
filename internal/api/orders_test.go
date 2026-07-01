@@ -81,7 +81,7 @@ func TestGetOrder_EscapesOrderID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotEscapedPath = r.URL.EscapedPath()
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"entities":{"order":{},"product":{}},"result":[]}`))
+		_, _ = w.Write([]byte(`{"entities":{"order":{},"product":{}},"result":""}`))
 	}))
 	defer srv.Close()
 	c, _ := client.New(&config.Session{}, nil)
@@ -102,16 +102,20 @@ func TestGetOrder_DenormalizesDecorated(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"entities":{
-				"order":{"o1":{"orderId":"o1","status":"DELIVERED","total":{"currency":"EUR","amount":"11.00"}}},
+				"order":{"o1":{
+					"orderId":"o1","status":"DELIVERED",
+					"orderTotals":{"totalPrice":{"currency":"EUR","amount":"11.00"}},
+					"items":[
+						{"product":"p1","quantity":2},
+						{"product":"p2","quantity":4}
+					]
+				}},
 				"product":{
-					"p1":{"productId":"p1","retailerProductId":"111","name":"Iogurt natural","price":{"currency":"EUR","amount":"3.50"}},
-					"p2":{"productId":"p2","retailerProductId":"222","name":"Llet sencera","price":{"currency":"EUR","amount":"1.00"}}
+					"p1":{"productId":"p1","retailerProductId":"111","name":"Iogurt natural","price":{"current":{"currency":"EUR","amount":"3.50"}}},
+					"p2":{"productId":"p2","retailerProductId":"222","name":"Llet sencera","price":{"current":{"currency":"EUR","amount":"1.00"}}}
 				}
 			},
-			"result":[
-				{"product":"p1","quantity":2,"price":{"currency":"EUR","amount":"7.00"}},
-				{"product":"p2","quantity":4,"price":{"currency":"EUR","amount":"4.00"}}
-			]
+			"result":"o1"
 		}`))
 	}))
 	defer srv.Close()
@@ -134,7 +138,7 @@ func TestGetOrder_DenormalizesDecorated(t *testing.T) {
 	if ord.Lines[0].Product.Name != "Iogurt natural" || ord.Lines[0].Product.RetailerProductID != "111" {
 		t.Errorf("line0 product = %+v", ord.Lines[0].Product)
 	}
-	if ord.Lines[0].Quantity != 2 || ord.Lines[0].Price == nil || ord.Lines[0].Price.Amount != "7.00" {
+	if ord.Lines[0].Quantity != 2 || ord.Lines[0].Price == nil || ord.Lines[0].Price.Amount != "3.50" {
 		t.Errorf("line0 = %+v", ord.Lines[0])
 	}
 	if ord.Lines[1].Product.Name != "Llet sencera" || ord.Lines[1].Quantity != 4 {

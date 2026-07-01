@@ -62,7 +62,7 @@ Ordered by dependency. Each ≤ ~5 files, one focused session.
   - Verify: httptest on slots v2 grid fixture; live `slots` for both groups.
   - Files: `internal/api/delivery.go`, `internal/cli/delivery.go`
 
-- [x] **T7 — Orders (read-only) + checkout open**  ✅ 2026-07-01 (httptest: orders list parse+limit, bare-array fallback, decorated denormalize; checkout browserOpenArgs per-OS; `checkout open --json` prints URL) — ✅ live 2026-07-01: `orders list` returns empty history cleanly (`--json` → `null`, valid); `orders show <id>` request path live-verified (correct `/orders/<id>/decorated` URL, error→stderr, exit 1). ⚠️ denormalize *success* path unexercised live (account has no orders; server rejects synthetic ids) — remains httptest-covered on the `decorated` fixture
+- [x] **T7 — Orders (read-only) + checkout open**  ✅ 2026-07-01 (httptest: orders list parse+limit, bare-array fallback, decorated denormalize; checkout browserOpenArgs per-OS; `checkout open --json` prints URL) — ✅ live 2026-07-01: `orders list` empty history clean (`--json` → `null`); `orders show <realId>` fully verified live (32 lines, total, `--json` valid). 🐛 live testing exposed a wrong `decorated` shape assumption — real payload has `result`=root-id string, line items under `entities.order[id].items`, and product price nested at `price.current` (not a top-level `result` array with inline price). Fixed `GetOrder` + updated httptest fixture to the real shape.
   - Acceptance: `orders list` + `orders show <id>` (denormalize `entities.product`); `checkout open` opens browser at `/checkout`.
   - Verify: httptest on `decorated` fixture; live `orders list`.
   - Files: `internal/api/orders.go`, `internal/cli/orders.go`, `internal/cli/checkout.go`

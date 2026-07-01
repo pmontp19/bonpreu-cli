@@ -79,23 +79,31 @@ func parseOrders(raw json.RawMessage) ([]OrderSummary, bool) {
 }
 
 // decoratedOrder mirrors the normalizr shape returned by the decorated endpoint:
-// entities keyed by id + a result list of line items referencing product ids.
+// `result` is the root order id (a string), `entities.order[id]` carries the
+// order metadata and its line items, and `entities.product` holds the referenced
+// products keyed by uuid. Product prices are nested under `price.current`, so
+// products decode as raw messages and are unpacked per line.
 type decoratedOrder struct {
 	Entities struct {
-		Order   map[string]orderMeta `json:"order"`
-		Product map[string]Product   `json:"product"`
+		Order   map[string]orderMeta       `json:"order"`
+		Product map[string]json.RawMessage `json:"product"`
 	} `json:"entities"`
-	Result []struct {
-		Product  string `json:"product"`
-		Quantity int    `json:"quantity"`
-		Price    *Money `json:"price,omitempty"`
-	} `json:"result"`
+	Result string `json:"result"`
 }
 
 type orderMeta struct {
-	OrderID string `json:"orderId"`
-	Status  string `json:"status"`
-	Total   *Money `json:"total"`
+	OrderID     string `json:"orderId"`
+	Status      string `json:"status"`
+	OrderTotals struct {
+		TotalPrice *Money `json:"totalPrice"`
+		FinalPrice *Money `json:"finalPrice"`
+	} `json:"orderTotals"`
+	Items []orderItemRef `json:"items"`
+}
+
+type orderItemRef struct {
+	Product  string `json:"product"`
+	Quantity int    `json:"quantity"`
 }
 
 // GetOrder fetches a single order and denormalizes it via entities.product.
@@ -106,29 +114,54 @@ func GetOrder(ctx context.Context, c *client.Client, orderID string) (*OrderDeta
 		return nil, err
 	}
 	out := &OrderDetail{OrderID: orderID}
-	if meta, ok := dec.Entities.Order[orderID]; ok {
+	meta, ok := dec.Entities.Order[dec.Result]
+	if !ok {
+		meta, ok = dec.Entities.Order[orderID]
+	}
+	if !ok && len(dec.Entities.Order) == 1 {
+		// Fallback only when unambiguous: map iteration order is randomized,
+		// so picking "the first" of several entries would be non-deterministic.
+		for _, m := range dec.Entities.Order {
+			meta, ok = m, true
+		}
+	}
+	if ok {
 		out.Status = meta.Status
-		out.Total = meta.Total
+		out.Total = meta.OrderTotals.TotalPrice
+		if out.Total == nil {
+			out.Total = meta.OrderTotals.FinalPrice
+		}
 		if meta.OrderID != "" {
 			out.OrderID = meta.OrderID
 		}
-	} else if len(dec.Entities.Order) == 1 {
-		// Fallback only when unambiguous: map iteration order is randomized,
-		// so picking "the first" of several entries would be non-deterministic.
-		for _, meta := range dec.Entities.Order {
-			out.Status = meta.Status
-			out.Total = meta.Total
-			if meta.OrderID != "" {
-				out.OrderID = meta.OrderID
-			}
+		for _, li := range meta.Items {
+			prod, price := decodeOrderProduct(dec.Entities.Product[li.Product])
+			out.Lines = append(out.Lines, OrderLine{
+				Product:  prod,
+				Quantity: li.Quantity,
+				Price:    price,
+			})
 		}
 	}
-	for _, li := range dec.Result {
-		out.Lines = append(out.Lines, OrderLine{
-			Product:  dec.Entities.Product[li.Product],
-			Quantity: li.Quantity,
-			Price:    li.Price,
-		})
-	}
 	return out, nil
+}
+
+// decodeOrderProduct unpacks a product entity, whose price is nested under
+// `price.current` rather than the flat Money shape used elsewhere.
+func decodeOrderProduct(raw json.RawMessage) (Product, *Money) {
+	var p Product
+	if len(raw) == 0 {
+		return p, nil
+	}
+	_ = json.Unmarshal(raw, &p)
+	var nested struct {
+		Price struct {
+			Current *Money `json:"current"`
+		} `json:"price"`
+	}
+	_ = json.Unmarshal(raw, &nested)
+	if p.Price == nil {
+		p.Price = nested.Price.Current
+	}
+	return p, nested.Price.Current
 }
