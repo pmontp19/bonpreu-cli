@@ -5,9 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/pmontp19/bonpreu-cli/internal/client"
 )
+
+func isJSONObject(raw json.RawMessage) bool {
+	return strings.HasPrefix(strings.TrimSpace(string(raw)), "{")
+}
 
 // OrderSummary is one entry of the read-only order history.
 type OrderSummary struct {
@@ -58,13 +64,13 @@ func parseOrders(raw json.RawMessage) ([]OrderSummary, bool) {
 		Orders  []OrderSummary `json:"orders"`
 		Content []OrderSummary `json:"content"`
 	}
-	if err := json.Unmarshal(raw, &wrapped); err == nil {
-		if len(wrapped.Orders) > 0 {
-			return wrapped.Orders, true
-		}
+	// A successful object unmarshal is itself proof the shape matched, so an
+	// empty history ({"orders":[]}) is a valid empty result, not a parse error.
+	if err := json.Unmarshal(raw, &wrapped); err == nil && isJSONObject(raw) {
 		if len(wrapped.Content) > 0 {
 			return wrapped.Content, true
 		}
+		return wrapped.Orders, true
 	}
 	if isEmptyJSON(raw) {
 		return []OrderSummary{}, true
@@ -95,7 +101,8 @@ type orderMeta struct {
 // GetOrder fetches a single order and denormalizes it via entities.product.
 func GetOrder(ctx context.Context, c *client.Client, orderID string) (*OrderDetail, error) {
 	var dec decoratedOrder
-	if err := c.DoJSON(ctx, http.MethodGet, "/api/order/v6/orders/"+orderID+"/decorated", nil, &dec); err != nil {
+	path := "/api/order/v6/orders/" + url.PathEscape(orderID) + "/decorated"
+	if err := c.DoJSON(ctx, http.MethodGet, path, nil, &dec); err != nil {
 		return nil, err
 	}
 	out := &OrderDetail{OrderID: orderID}
@@ -105,14 +112,15 @@ func GetOrder(ctx context.Context, c *client.Client, orderID string) (*OrderDeta
 		if meta.OrderID != "" {
 			out.OrderID = meta.OrderID
 		}
-	} else {
+	} else if len(dec.Entities.Order) == 1 {
+		// Fallback only when unambiguous: map iteration order is randomized,
+		// so picking "the first" of several entries would be non-deterministic.
 		for _, meta := range dec.Entities.Order {
 			out.Status = meta.Status
 			out.Total = meta.Total
 			if meta.OrderID != "" {
 				out.OrderID = meta.OrderID
 			}
-			break
 		}
 	}
 	for _, li := range dec.Result {

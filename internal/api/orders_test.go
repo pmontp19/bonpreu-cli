@@ -58,6 +58,43 @@ func TestGetOrders_BareArray(t *testing.T) {
 	}
 }
 
+func TestGetOrders_EmptyWrapped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"orders":[]}`))
+	}))
+	defer srv.Close()
+	c, _ := client.New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+
+	orders, err := GetOrders(context.Background(), c, 0)
+	if err != nil {
+		t.Fatalf("GetOrders on empty history should not error: %v", err)
+	}
+	if len(orders) != 0 {
+		t.Errorf("orders = %+v, want empty", orders)
+	}
+}
+
+func TestGetOrder_EscapesOrderID(t *testing.T) {
+	var gotEscapedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotEscapedPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"entities":{"order":{},"product":{}},"result":[]}`))
+	}))
+	defer srv.Close()
+	c, _ := client.New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+
+	if _, err := GetOrder(context.Background(), c, "a/b"); err != nil {
+		t.Fatalf("GetOrder: %v", err)
+	}
+	if gotEscapedPath != "/api/order/v6/orders/a%2Fb/decorated" {
+		t.Errorf("escaped path = %q, want the orderID segment escaped", gotEscapedPath)
+	}
+}
+
 func TestGetOrder_DenormalizesDecorated(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
