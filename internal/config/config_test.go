@@ -69,6 +69,34 @@ func TestLoadConfigReadsValue(t *testing.T) {
 	}
 }
 
+func TestLoadConfigFrom_ExplicitPathOverridesDefault(t *testing.T) {
+	// BONPREU_HOME points somewhere with no config.json; LoadConfigFrom must
+	// still read the explicit --config path rather than falling through.
+	t.Setenv("BONPREU_HOME", t.TempDir())
+	altDir := t.TempDir()
+	altPath := filepath.Join(altDir, "alt-config.json")
+	if err := os.WriteFile(altPath, []byte(`{"default_max_eur":9.99}`), 0o600); err != nil {
+		t.Fatalf("write alt config: %v", err)
+	}
+	c, err := LoadConfigFrom(altPath)
+	if err != nil {
+		t.Fatalf("LoadConfigFrom: %v", err)
+	}
+	if c.DefaultMaxEUR != 9.99 {
+		t.Fatalf("DefaultMaxEUR = %v, want 9.99", c.DefaultMaxEUR)
+	}
+}
+
+func TestLoadConfigFrom_MissingReturnsEmpty(t *testing.T) {
+	c, err := LoadConfigFrom(filepath.Join(t.TempDir(), "missing.json"))
+	if err != nil {
+		t.Fatalf("LoadConfigFrom: %v", err)
+	}
+	if c == nil {
+		t.Fatal("expected non-nil config")
+	}
+}
+
 func TestCacheRoundTripAndMissing(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BONPREU_HOME", dir)

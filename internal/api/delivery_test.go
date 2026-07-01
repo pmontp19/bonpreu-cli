@@ -157,3 +157,10 @@ func TestReserveSlot_Body(t *testing.T) {
 		t.Errorf("reservation = %+v", res.Slot)
 	}
 }
+
+func TestReserveSlot_MissingSessionErrors(t *testing.T) {
+	c, _ := client.New(&config.Session{}, nil)
+	if _, err := ReserveSlot(context.Background(), c, "s1"); err == nil {
+		t.Fatal("expected error when session lacks deliveryDestinationId/regionId")
+	}
+}

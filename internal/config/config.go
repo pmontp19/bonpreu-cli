@@ -111,6 +111,16 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	return loadConfigFile(p)
+}
+
+// LoadConfigFrom loads config.json from an explicit path, honoring the
+// --config flag instead of the default ~/.bonpreu/config.json.
+func LoadConfigFrom(path string) (*Config, error) {
+	return loadConfigFile(path)
+}
+
+func loadConfigFile(p string) (*Config, error) {
 	b, err := os.ReadFile(p)
 	if err != nil {
 		if os.IsNotExist(err) {

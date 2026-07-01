@@ -28,10 +28,20 @@ func (rt runtime) guard() (guard, error) {
 		}
 		return guard{max: v}, nil
 	}
-	if cfg, err := config.LoadConfig(); err == nil && cfg.DefaultMaxEUR > 0 {
+	cfg, err := loadConfig(rt.flags)
+	if err == nil && cfg.DefaultMaxEUR > 0 {
 		return guard{max: cfg.DefaultMaxEUR}, nil
 	}
 	return guard{}, nil
+}
+
+// loadConfig honors --config when set, so a user pointing the CLI at an
+// alternate config.json doesn't silently fall back to the default path.
+func loadConfig(f *Flags) (*config.Config, error) {
+	if f != nil && f.Config != "" {
+		return config.LoadConfigFrom(f.Config)
+	}
+	return config.LoadConfig()
 }
 
 func (g guard) enabled() bool { return g.max > 0 }
@@ -48,16 +58,36 @@ func (g guard) enforceAdd(ctx context.Context, rt runtime, items []api.CartItemI
 	if err != nil {
 		return fmt.Errorf("spending guard: unreadable cart total %q (fail-closed)", cart.TotalAmount())
 	}
+	var uuids []string
+	for _, it := range items {
+		if it.Quantity > 0 {
+			uuids = append(uuids, it.ProductID)
+		}
+	}
+	prices := map[string]float64{}
+	if len(uuids) > 0 {
+		prods, err := api.GetProducts(ctx, rt.client, uuids)
+		if err != nil {
+			return fmt.Errorf("spending guard: %w (fail-closed)", err)
+		}
+		for _, p := range prods {
+			if p.Price != nil {
+				if v, err := strconv.ParseFloat(p.Price.Amount, 64); err == nil {
+					prices[p.ProductID] = v
+				}
+			}
+		}
+	}
 	added := 0.0
 	for _, it := range items {
 		if it.Quantity <= 0 {
 			continue
 		}
-		p, err := api.PriceOf(ctx, rt.client, it.ProductID)
-		if err != nil {
-			return fmt.Errorf("spending guard: %w (fail-closed)", err)
+		price, ok := prices[it.ProductID]
+		if !ok {
+			return fmt.Errorf("spending guard: price not found for %s (fail-closed)", it.ProductID)
 		}
-		added += p * float64(it.Quantity)
+		added += price * float64(it.Quantity)
 	}
 	if current+added > g.max {
 		return fmt.Errorf("spending guard: cart %.2f + %.2f > --max %.2f (refused)", current, added, g.max)

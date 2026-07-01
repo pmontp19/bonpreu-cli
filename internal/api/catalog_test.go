@@ -200,6 +200,26 @@ func TestGetProducts_ShapesAndEmpty(t *testing.T) {
 	}
 }
 
+func TestScrapeProductID_EscapesPathSegment(t *testing.T) {
+	// A malicious/confused retailerID must not be able to redirect the
+	// request to a different same-host path via unescaped "/" or "?" — the
+	// segment must be sent escaped on the wire, same as GetOrder's orderID.
+	var gotEscapedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotEscapedPath = r.URL.EscapedPath()
+		_, _ = w.Write([]byte(`<html></html>`))
+	}))
+	defer srv.Close()
+	c, _ := client.New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+
+	const malicious = "../cart/v1/carts/active?x=1"
+	_, _ = scrapeProductID(context.Background(), c, malicious)
+	if gotEscapedPath != "/products/_/..%2Fcart%2Fv1%2Fcarts%2Factive%3Fx=1" {
+		t.Fatalf("escaped path = %q, want the retailerID segment escaped", gotEscapedPath)
+	}
+}
+
 func TestGetProducts_EmptyAndUnparseable(t *testing.T) {
 	// Empty JSON body → nil, no error.
 	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -259,6 +279,23 @@ func TestParseProducts_Variants(t *testing.T) {
 	}
 	if _, ok := parseProducts([]byte(`{"unexpected":true}`)); ok {
 		t.Error("unrecognized shape should not parse")
+	}
+}
+
+func TestGetProducts_EmptyProductsWrapperShape(t *testing.T) {
+	// A legitimately-empty wrapped response (e.g. all requested uuids were
+	// delisted) must not be mistaken for an unrecognized shape.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"products":[]}`))
+	}))
+	defer srv.Close()
+	c, _ := client.New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+
+	got, err := GetProducts(context.Background(), c, []string{"u1"})
+	if err != nil || got != nil {
+		t.Fatalf("empty products wrapper: %v %+v", err, got)
 	}
 }
 

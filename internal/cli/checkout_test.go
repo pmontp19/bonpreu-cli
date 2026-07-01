@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+)
 
 func TestBrowserOpenArgs(t *testing.T) {
 	const target = "https://example.com/checkout"
@@ -41,3 +45,54 @@ func TestBrowserOpenArgs(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckoutOpen_JSONStillOpensBrowser(t *testing.T) {
+	oldExec := execStart
+	defer func() { execStart = oldExec }()
+	var openedName string
+	var openedArgs []string
+	execStart = func(name string, argv []string) error {
+		openedName = name
+		openedArgs = argv
+		return nil
+	}
+
+	rt := runtime{flags: &Flags{JSON: true}, json: true}
+	ctx := ctxWithRuntime(context.Background(), rt)
+	cmd := newCheckoutOpenCmd()
+	cmd.SetContext(ctx)
+
+	out := captureStdout(t, func() {
+		if err := cmd.RunE(cmd, nil); err != nil {
+			t.Fatalf("checkout open --json: %v", err)
+		}
+	})
+	if openedName == "" {
+		t.Fatal("--json must still open the browser, but execStart was never called")
+	}
+	if len(openedArgs) == 0 {
+		t.Fatalf("browser open args were empty: %v", openedArgs)
+	}
+	if out == "" {
+		t.Fatal("--json should still print the JSON summary to stdout")
+	}
+}
+
+func TestCheckoutOpen_BrowserOpenErrorPropagates(t *testing.T) {
+	oldExec := execStart
+	defer func() { execStart = oldExec }()
+	execStart = func(name string, argv []string) error {
+		return errBrowserOpenFailedForTest
+	}
+
+	rt := runtime{}
+	ctx := ctxWithRuntime(context.Background(), rt)
+	cmd := newCheckoutOpenCmd()
+	cmd.SetContext(ctx)
+
+	if err := cmd.RunE(cmd, nil); err == nil {
+		t.Fatal("expected browser-open failure to propagate as an error")
+	}
+}
+
+var errBrowserOpenFailedForTest = errors.New("simulated browser open failure")

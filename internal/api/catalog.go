@@ -84,6 +84,9 @@ func GetProducts(ctx context.Context, c *client.Client, uuids []string) ([]Produ
 		return nil, err
 	}
 	if prods, ok := parseProducts(raw); ok {
+		if len(prods) == 0 {
+			return nil, nil
+		}
 		return prods, nil
 	}
 	if isEmptyJSON(raw) {
@@ -105,51 +108,44 @@ func truncateRaw(raw json.RawMessage) string {
 	return s
 }
 
+// parseProducts recognizes the three known top-level shapes for a products
+// response and returns ok=true even when the recognized shape is legitimately
+// empty (e.g. {"products":[]}) — only a shape with none of these keys is
+// treated as unparseable.
 func parseProducts(raw json.RawMessage) ([]Product, bool) {
 	var direct []Product
-	if err := json.Unmarshal(raw, &direct); err == nil && len(direct) > 0 {
+	if err := json.Unmarshal(raw, &direct); err == nil {
 		return direct, true
 	}
-	var wrapped struct {
-		Products []Product `json:"products"`
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, false
 	}
-	if err := json.Unmarshal(raw, &wrapped); err == nil && len(wrapped.Products) > 0 {
-		return wrapped.Products, true
-	}
-	var group struct {
-		ProductGroups []struct {
-			DecoratedProducts []Product `json:"decoratedProducts"`
-		} `json:"productGroups"`
-	}
-	if err := json.Unmarshal(raw, &group); err == nil {
-		var out []Product
-		for _, g := range group.ProductGroups {
-			out = append(out, g.DecoratedProducts...)
+	if v, ok := obj["products"]; ok {
+		var prods []Product
+		if err := json.Unmarshal(v, &prods); err == nil {
+			return prods, true
 		}
-		if len(out) > 0 {
+	}
+	if v, ok := obj["productGroups"]; ok {
+		var groups []struct {
+			DecoratedProducts []Product `json:"decoratedProducts"`
+		}
+		if err := json.Unmarshal(v, &groups); err == nil {
+			var out []Product
+			for _, g := range groups {
+				out = append(out, g.DecoratedProducts...)
+			}
 			return out, true
 		}
 	}
 	return nil, false
 }
 
-func IsUUID(s string) bool {
-	if len(s) != 36 {
-		return false
-	}
-	for i, c := range s {
-		switch i {
-		case 8, 13, 18, 23:
-			if c != '-' {
-				return false
-			}
-		default:
-			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-				return false
-			}
-		}
-	}
-	return true
+// IsUUID reports whether id is a canonical UUID; the check itself lives in
+// internal/client since client.ParseSession needs it too.
+func IsUUID(id string) bool {
+	return client.IsUUID(id)
 }
 
 func ResolveProductID(ctx context.Context, c *client.Client, id string, cache *config.IDCache) (string, error) {
@@ -176,13 +172,13 @@ func ResolveProductID(ctx context.Context, c *client.Client, id string, cache *c
 }
 
 func scrapeProductID(ctx context.Context, c *client.Client, retailerID string) (string, error) {
-	b, err := c.DoRaw(ctx, http.MethodGet, "/products/_/"+retailerID)
+	b, err := c.DoRaw(ctx, http.MethodGet, "/products/_/"+url.PathEscape(retailerID))
 	if err != nil {
 		return "", err
 	}
 	js, ok := client.ExtractInitialState(string(b))
 	if !ok {
-		return "", fmt.Errorf("no __INITIAL_STATE__ on product page (slug may be required)")
+		return "", fmt.Errorf("no __QUERY_INITIAL_STATE__ (or __INITIAL_STATE__) on product page (slug may be required)")
 	}
 	var raw any
 	if err := json.Unmarshal([]byte(js), &raw); err != nil {

@@ -33,20 +33,26 @@ func newCheckoutOpenCmd() *cobra.Command {
 			ctx := cmd.Context()
 			rt := ctxValue(ctx)
 			target := client.BaseURL + "/checkout"
-			if rt.json {
-				return printJSON(map[string]string{"url": target})
-			}
 			name, argv, err := browserOpenArgs(goruntime.GOOS, target)
 			if err != nil {
 				return err
 			}
-			if err := exec.Command(name, argv...).Start(); err != nil {
+			if err := execStart(name, argv); err != nil {
 				return fmt.Errorf("open browser: %w", err)
+			}
+			if rt.json {
+				return printJSON(map[string]string{"url": target})
 			}
 			fmt.Fprintf(os.Stdout, "opening %s\n", target)
 			return nil
 		},
 	}
+}
+
+// execStart launches the platform's open command; overridden in tests so
+// `checkout open --json` can be exercised without popping a real browser.
+var execStart = func(name string, argv []string) error {
+	return exec.Command(name, argv...).Start()
 }
 
 // browserOpenArgs returns the command and arguments that open target in the

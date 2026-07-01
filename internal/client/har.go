@@ -106,7 +106,7 @@ func ParseSession(r io.Reader) (*config.Session, error) {
 			// destination id; the list URL (.../delivery-addresses?...) does
 			// not, so guard against storing the literal path segment.
 			if s.DeliveryDestinationID == "" {
-				if seg := lastPathSegment(u.Path); isUUID(seg) {
+				if seg := lastPathSegment(u.Path); IsUUID(seg) {
 					s.DeliveryDestinationID = seg
 				}
 			}
@@ -195,7 +195,8 @@ func isHomepage(u *url.URL) bool {
 	return u.Host != "" && strings.Contains(u.Host, bonpreuHost) && (u.Path == "" || u.Path == "/")
 }
 
-func isUUID(s string) bool {
+// IsUUID reports whether s is a canonical 36-character UUID (8-4-4-4-12 hex).
+func IsUUID(s string) bool {
 	if len(s) != 36 {
 		return false
 	}
