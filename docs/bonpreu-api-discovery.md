@@ -629,6 +629,44 @@ GET /api/webproductpagews/v5/product-pages?limit=30&offset=0&tag=web&tag=lihp
 
 ---
 
+#### Wallet / Payment Methods
+
+##### GET `/api/walletservice/v3/wallet-items`
+**Purpose:** List saved payment methods (`/settings/wallet` page)
+**Visibility:** Authenticated
+**Status:** ✅ IMPLEMENTED 2026-07-01 (`wallet list`) — read-only, no auth beyond the standard session headers
+
+**Response:** Array of saved cards, no request body/params
+
+```json
+[
+  {
+    "customerId": "...",
+    "fundingInstrumentId": "...",
+    "bannerId": "...",
+    "defaultWalletItem": true,
+    "details": {
+      "lastFourDigits": "5016",
+      "bin": "540205",
+      "cardType": "MasterCard",
+      "expiryMonth": "06",
+      "expiryYear": "2026",
+      "pspName": "Braintree"
+    },
+    "walletItemId": "...",
+    "paymentMethod": "BRAINTREE",
+    "creationTime": "2026-05-11T23:16:28.605068211Z",
+    "paymentInstrumentType": "CARD_TOKEN",
+    "paymentMethodType": "CARDS",
+    "expired": true
+  }
+]
+```
+
+**Note:** `expired` reflects card expiry (past `expiryMonth`/`expiryYear`), not session/token expiry. Listing is read-only and does not touch the Braintree/3DS payment flow, which stays out of scope (see SPEC.md).
+
+---
+
 ### Public Endpoints
 
 #### Search & Browse

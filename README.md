@@ -81,6 +81,7 @@ bonpreu slots reserve <slotId> [-g/--group home|cc] [--destination <id>]
 bonpreu checkout open        # opens the browser at /checkout to finish 3DS
 bonpreu orders list [-n/--limit 0]
 bonpreu orders show <orderId>
+bonpreu wallet list          # saved payment methods (read-only)
 ```
 
 `bonpreu <command> --help` shows flags for any command; `bonpreu completion <shell>` generates a

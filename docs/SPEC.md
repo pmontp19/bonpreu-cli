@@ -63,6 +63,8 @@ slots reserve <slotId>                  # POST ecomslots/v1/slots/reservation
 orders list [--limit N]            # GET order/v6/orders (read-only)
 orders show <orderId>              # order detail (confirm exact endpoint in impl)
 
+wallet list                        # GET walletservice/v3/wallet-items (read-only, saved cards)
+
 checkout open                      # open default browser at /checkout (handoff for 3DS)
 ```
 
@@ -133,9 +135,10 @@ Manual verification against the live test account (cookies imported via HAR):
 4. `slots --group home` and `slots --group cc` both return available slots; `slots reserve <id>` succeeds (or returns a clear error).
 5. `delivery addresses --method home|cc` lists the saved address / pickup point.
 6. `orders list` returns prior orders read-only.
-7. `--max 5` refuses a `cart add` whose total would exceed 5€, exit 1.
-8. `checkout open` opens the browser at `/checkout`.
-9. Every command supports `--json` emitting valid JSON to stdout with diagnostics on stderr.
+7. `wallet list` lists saved payment methods (masked, no full card numbers) read-only.
+8. `--max 5` refuses a `cart add` whose total would exceed 5€, exit 1.
+9. `checkout open` opens the browser at `/checkout`.
+10. Every command supports `--json` emitting valid JSON to stdout with diagnostics on stderr.
 
 ## Open Questions
 
