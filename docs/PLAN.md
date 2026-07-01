@@ -62,7 +62,7 @@ Ordered by dependency. Each ≤ ~5 files, one focused session.
   - Verify: httptest on slots v2 grid fixture; live `slots` for both groups.
   - Files: `internal/api/delivery.go`, `internal/cli/delivery.go`
 
-- [ ] **T7 — Orders (read-only) + checkout open**
+- [x] **T7 — Orders (read-only) + checkout open**  ✅ 2026-07-01 (httptest: orders list parse+limit, bare-array fallback, decorated denormalize; checkout browserOpenArgs per-OS; `checkout open --json` prints URL) — ⚠️ live `orders list`/`show` still pending (list JSON shape confirmed live)
   - Acceptance: `orders list` + `orders show <id>` (denormalize `entities.product`); `checkout open` opens browser at `/checkout`.
   - Verify: httptest on `decorated` fixture; live `orders list`.
   - Files: `internal/api/orders.go`, `internal/cli/orders.go`, `internal/cli/checkout.go`
