@@ -13,21 +13,22 @@ API surface is reverse-engineered and documented in [`docs/bonpreu-api-discovery
 ## Quickstart
 
 ```sh
-# 1. Build
-go build -o bin/bonpreu ./cmd/bonpreu
+# 1. Install (requires Go; or `go build -o bin/bonpreu ./cmd/bonpreu` from a clone).
+#    Installs to $(go env GOPATH)/bin — make sure that's on your PATH.
+go install github.com/pmontp19/bonpreu-cli/cmd/bonpreu@latest
 
 # 2. Log in at compraonline.bonpreuesclat.cat in a browser, export a HAR,
 #    then import the session (writes ~/.bonpreu/*, 0600):
-bin/bonpreu import-har --file login.har
-bin/bonpreu whoami                      # verify the session
+bonpreu import-har --file login.har
+bonpreu whoami                          # verify the session
 
 # 3. Shop
-bin/bonpreu search iogurt --json
-bin/bonpreu cart add <id> 2             # <id> = UUID or numeric retailerProductId
-bin/bonpreu cart get
-bin/bonpreu slots --group home
-bin/bonpreu slots reserve <slotId>
-bin/bonpreu checkout open               # finish 3DS in the browser
+bonpreu search iogurt --json
+bonpreu cart add <id> 2                 # <id> = UUID or numeric retailerProductId
+bonpreu cart get
+bonpreu slots --group home
+bonpreu slots reserve <slotId>
+bonpreu checkout open                   # finish 3DS in the browser
 ```
 
 Every command accepts `--json` for machine-readable output on stdout (diagnostics go to stderr).
