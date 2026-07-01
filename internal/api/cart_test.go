@@ -56,20 +56,6 @@ type api__item struct {
 	Quantity  int    `json:"quantity"`
 }
 
-func TestPriceOf(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"productId":"u1","price":{"currency":"EUR","amount":"1.90"}}]`))
-	}))
-	defer srv.Close()
-	c, _ := client.New(&config.Session{}, nil)
-	c.BaseURL = srv.URL
-	p, err := PriceOf(context.Background(), c, "u1")
-	if err != nil || p != 1.90 {
-		t.Fatalf("PriceOf = %v %v", p, err)
-	}
-}
-
 func TestGetActiveCartAndHelpers(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/cart/v1/carts/active" {

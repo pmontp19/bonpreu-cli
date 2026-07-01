@@ -96,6 +96,27 @@ func TestScrapeProductID_PrefersQueryStateOverInitialState(t *testing.T) {
 	}
 }
 
+func TestScrapeProductID_FallsBackToInitialStateWhenQueryStateAbsent(t *testing.T) {
+	// Some pages may only carry __INITIAL_STATE__ (no query cache blob at
+	// all). The scraper must still resolve via that fallback rather than
+	// erroring, per ExtractInitialState's documented resilience guarantee.
+	html := `<html><script>window.__INITIAL_STATE__={"product":{"productId":"98dc2105-04ed-4cd3-9e0b-5fa77dab0176","retailerProductId":"74927"}}</script></html>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(html))
+	}))
+	defer srv.Close()
+	c, _ := client.New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+
+	got, err := scrapeProductID(context.Background(), c, "74927")
+	if err != nil {
+		t.Fatalf("scrape: %v", err)
+	}
+	if got != "98dc2105-04ed-4cd3-9e0b-5fa77dab0176" {
+		t.Fatalf("got %q, want the fallback __INITIAL_STATE__ uuid", got)
+	}
+}
+
 func TestResolveProductID_NumericNotInCacheErrors(t *testing.T) {
 	// Page has no matching state, so the scrape fallback fails and the
 	// resolver surfaces an error rather than hitting the live site.

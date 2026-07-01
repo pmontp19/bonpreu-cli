@@ -184,13 +184,20 @@ func scrapeProductID(ctx context.Context, c *client.Client, retailerID string) (
 	if err := json.Unmarshal([]byte(js), &raw); err != nil {
 		return "", fmt.Errorf("parse state: %w", err)
 	}
-	if pid := findProductID(raw, retailerID); pid != "" {
+	if pid := findProductID(raw, retailerID, maxProductIDSearchDepth); pid != "" {
 		return pid, nil
 	}
 	return "", fmt.Errorf("retailerProductId %s not present in page state", retailerID)
 }
 
-func findProductID(node any, retailerID string) string {
+// maxProductIDSearchDepth bounds findProductID's recursion so a pathological
+// or adversarial state blob can't exhaust the stack.
+const maxProductIDSearchDepth = 64
+
+func findProductID(node any, retailerID string, depth int) string {
+	if depth <= 0 {
+		return ""
+	}
 	switch v := node.(type) {
 	case map[string]any:
 		if rp, _ := v["retailerProductId"].(string); rp == retailerID {
@@ -199,13 +206,13 @@ func findProductID(node any, retailerID string) string {
 			}
 		}
 		for _, child := range v {
-			if pid := findProductID(child, retailerID); pid != "" {
+			if pid := findProductID(child, retailerID, depth-1); pid != "" {
 				return pid
 			}
 		}
 	case []any:
 		for _, child := range v {
-			if pid := findProductID(child, retailerID); pid != "" {
+			if pid := findProductID(child, retailerID, depth-1); pid != "" {
 				return pid
 			}
 		}

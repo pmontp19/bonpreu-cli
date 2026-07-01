@@ -31,8 +31,12 @@ bin/bonpreu checkout open               # finish 3DS in the browser
 ```
 
 Every command accepts `--json` for machine-readable output on stdout (diagnostics go to stderr).
-Guard spending with `--max <eur>` (or `BONPREU_MAX_EUR`): cart mutations that would push the
-projected total over the cap are refused, and it fails closed if the total can't be read.
+Guard spending with `--max <eur>` (or `BONPREU_MAX_EUR`, or `default_max_eur` in config.json): cart
+mutations that would push the projected total over the cap are refused, and it fails closed if the
+total (or the config) can't be read.
+
+State lives under `~/.bonpreu/` (override with `BONPREU_HOME`): `cookies.json` (session, 0600),
+`config.json` (spending cap; override its path with `--config <path>`), `cache.json` (id lookups).
 
 ## Auth model
 

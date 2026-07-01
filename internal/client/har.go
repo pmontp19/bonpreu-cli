@@ -60,7 +60,7 @@ func ParseSession(r io.Reader) (*config.Session, error) {
 		if err != nil {
 			continue
 		}
-		isBP := strings.Contains(u.Host, bonpreuHost)
+		isBP := isBonpreuHost(u.Host)
 		if isBP {
 			for _, h := range e.Request.Headers {
 				switch strings.ToLower(h.Name) {
@@ -192,7 +192,14 @@ func mergeSetCookie(cookies map[string]string, header string) {
 }
 
 func isHomepage(u *url.URL) bool {
-	return u.Host != "" && strings.Contains(u.Host, bonpreuHost) && (u.Path == "" || u.Path == "/")
+	return isBonpreuHost(u.Host) && (u.Path == "" || u.Path == "/")
+}
+
+// isBonpreuHost matches the retailer host exactly or as a subdomain, so a
+// HAR entry for e.g. "compraonline.bonpreuesclat.cat.attacker.com" can't be
+// mistaken for the real host via a loose substring check.
+func isBonpreuHost(host string) bool {
+	return host == bonpreuHost || strings.HasSuffix(host, "."+bonpreuHost)
 }
 
 // IsUUID reports whether s is a canonical 36-character UUID (8-4-4-4-12 hex).

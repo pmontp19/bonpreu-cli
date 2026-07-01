@@ -97,6 +97,16 @@ func TestLoadConfigFrom_MissingReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestLoadConfigFrom_MalformedJSONErrors(t *testing.T) {
+	altPath := filepath.Join(t.TempDir(), "bad-config.json")
+	if err := os.WriteFile(altPath, []byte(`{not json`), 0o600); err != nil {
+		t.Fatalf("write bad config: %v", err)
+	}
+	if _, err := LoadConfigFrom(altPath); err == nil {
+		t.Fatal("malformed config JSON must error, not return a zero-value config silently")
+	}
+}
+
 func TestCacheRoundTripAndMissing(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BONPREU_HOME", dir)

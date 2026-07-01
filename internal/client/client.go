@@ -18,6 +18,10 @@ import (
 const (
 	BaseURL   = "https://www.compraonline.bonpreuesclat.cat"
 	userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+
+	// maxRawBodyBytes caps DoRaw reads (product page HTML) so a pathological
+	// or compromised response can't be unmarshaled/walked as unbounded data.
+	maxRawBodyBytes = 10 << 20 // 10MB
 )
 
 type Client struct {
@@ -102,9 +106,12 @@ func (c *Client) DoRaw(ctx context.Context, method, urlPath string) ([]byte, err
 	}
 	defer resp.Body.Close()
 	c.captureCSRF(resp)
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxRawBodyBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
+	}
+	if len(data) > maxRawBodyBytes {
+		return nil, fmt.Errorf("response body exceeds %d bytes", maxRawBodyBytes)
 	}
 	if resp.StatusCode >= 400 {
 		return nil, &HTTPError{Status: resp.StatusCode, URL: urlPath, Body: truncate(data, 500)}

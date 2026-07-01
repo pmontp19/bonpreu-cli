@@ -165,6 +165,59 @@ func TestEnforceAdd_MissingPriceFailsClosed(t *testing.T) {
 	}
 }
 
+func TestEnforceAdd_PartiallyMissingPriceFailsClosed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/carts/active"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"totals":{"itemPriceAfterPromos":{"currency":"EUR","amount":"0.00"}},"items":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/products"):
+			// u1 is priced (e.g. delisted product mixed with a valid one); u2 is not.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"productId":"u1","price":{"currency":"EUR","amount":"1.00"}}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	c, _ := client.New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+	rt := runtime{client: c}
+	g := guard{max: 100}
+
+	err := g.enforceAdd(context.Background(), rt, []api.CartItemInput{
+		{ProductID: "u1", Quantity: 1},
+		{ProductID: "u2", Quantity: 1},
+	})
+	if err == nil || !strings.Contains(err.Error(), "fail-closed") {
+		t.Fatalf("partially missing price must fail closed, got: %v", err)
+	}
+}
+
+func TestEnforceAdd_ProductsErrorFailsClosed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/carts/active"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"totals":{"itemPriceAfterPromos":{"currency":"EUR","amount":"0.00"}},"items":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/products"):
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	c, _ := client.New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+	rt := runtime{client: c}
+	g := guard{max: 100}
+
+	err := g.enforceAdd(context.Background(), rt, []api.CartItemInput{{ProductID: "u1", Quantity: 1}})
+	if err == nil || !strings.Contains(err.Error(), "fail-closed") {
+		t.Fatalf("products API error must fail closed, got: %v", err)
+	}
+}
+
 func TestGuardResolution(t *testing.T) {
 	t.Run("flag wins", func(t *testing.T) {
 		t.Setenv("BONPREU_HOME", t.TempDir())
@@ -219,6 +272,19 @@ func TestGuardResolution(t *testing.T) {
 		g, err := rt.guard()
 		if err != nil || g.max != 9.99 {
 			t.Fatalf("--config path should be honored: %v max=%v", err, g.max)
+		}
+	})
+	t.Run("--config with malformed JSON fails closed, not silently disabled", func(t *testing.T) {
+		t.Setenv("BONPREU_HOME", t.TempDir())
+		os.Unsetenv("BONPREU_MAX_EUR")
+		altDir := t.TempDir()
+		altPath := altDir + "/bad-config.json"
+		if err := os.WriteFile(altPath, []byte(`{not json`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		rt := runtime{flags: &Flags{Config: altPath}}
+		if _, err := rt.guard(); err == nil {
+			t.Fatal("malformed --config must error, not silently disable the guard")
 		}
 	})
 }

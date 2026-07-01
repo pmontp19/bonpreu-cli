@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -129,17 +128,4 @@ func ApplyQuantity(ctx context.Context, c *client.Client, items []CartItemInput)
 		return nil, err
 	}
 	return &cart, nil
-}
-
-func PriceOf(ctx context.Context, c *client.Client, uuid string) (float64, error) {
-	prods, err := GetProducts(ctx, c, []string{uuid})
-	if err != nil {
-		return 0, err
-	}
-	for _, p := range prods {
-		if p.ProductID == uuid && p.Price != nil {
-			return strconv.ParseFloat(p.Price.Amount, 64)
-		}
-	}
-	return 0, fmt.Errorf("price not found for %s", uuid)
 }

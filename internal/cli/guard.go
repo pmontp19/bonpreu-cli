@@ -29,7 +29,10 @@ func (rt runtime) guard() (guard, error) {
 		return guard{max: v}, nil
 	}
 	cfg, err := loadConfig(rt.flags)
-	if err == nil && cfg.DefaultMaxEUR > 0 {
+	if err != nil {
+		return guard{}, fmt.Errorf("spending guard: could not load config: %w", err)
+	}
+	if cfg.DefaultMaxEUR > 0 {
 		return guard{max: cfg.DefaultMaxEUR}, nil
 	}
 	return guard{}, nil
