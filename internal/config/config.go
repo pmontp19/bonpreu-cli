@@ -29,6 +29,10 @@ type Session struct {
 
 type Config struct {
 	DefaultMaxEUR float64 `json:"default_max_eur,omitempty"`
+	// DefaultDestinations remembers the delivery destination id to use per
+	// group ("home"|"cc"), set via `delivery use`, mirroring how the website
+	// remembers your last-picked location in the browser.
+	DefaultDestinations map[string]string `json:"default_destinations,omitempty"`
 }
 
 type IDCache struct {
@@ -130,6 +134,32 @@ func loadConfigFile(p string) (*Config, error) {
 	}
 	var c Config
 	return &c, json.Unmarshal(b, &c)
+}
+
+// SaveConfig writes config.json at the default ~/.bonpreu path, creating the
+// directory if needed.
+func SaveConfig(c *Config) error {
+	if _, err := EnsureDir(); err != nil {
+		return err
+	}
+	p, err := ConfigPath()
+	if err != nil {
+		return err
+	}
+	return saveConfigFile(p, c)
+}
+
+// SaveConfigTo writes config.json to an explicit path, honoring --config.
+func SaveConfigTo(path string, c *Config) error {
+	return saveConfigFile(path, c)
+}
+
+func saveConfigFile(p string, c *Config) error {
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, b, 0o600)
 }
 
 func CachePath() (string, error) {

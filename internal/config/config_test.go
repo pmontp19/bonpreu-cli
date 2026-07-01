@@ -107,6 +107,38 @@ func TestLoadConfigFrom_MalformedJSONErrors(t *testing.T) {
 	}
 }
 
+func TestSaveConfigRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("BONPREU_HOME", dir)
+
+	cfg := &Config{DefaultMaxEUR: 50, DefaultDestinations: map[string]string{"cc": "pickup-1"}}
+	if err := SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	got, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got.DefaultMaxEUR != 50 || got.DefaultDestinations["cc"] != "pickup-1" {
+		t.Fatalf("round-trip mismatch: %+v", got)
+	}
+}
+
+func TestSaveConfigTo_ExplicitPath(t *testing.T) {
+	altPath := filepath.Join(t.TempDir(), "alt-config.json")
+	cfg := &Config{DefaultDestinations: map[string]string{"home": "addr-1"}}
+	if err := SaveConfigTo(altPath, cfg); err != nil {
+		t.Fatalf("SaveConfigTo: %v", err)
+	}
+	got, err := LoadConfigFrom(altPath)
+	if err != nil {
+		t.Fatalf("LoadConfigFrom: %v", err)
+	}
+	if got.DefaultDestinations["home"] != "addr-1" {
+		t.Fatalf("round-trip mismatch: %+v", got)
+	}
+}
+
 func TestCacheRoundTripAndMissing(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BONPREU_HOME", dir)

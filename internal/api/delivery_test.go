@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pmontp19/bonpreu-cli/internal/client"
@@ -67,7 +68,7 @@ func TestGetSlots_FlattensV2Grid(t *testing.T) {
 	c, _ := client.New(&config.Session{DeliveryDestinationID: "d1", RegionID: "r1"}, nil)
 	c.BaseURL = srv.URL
 
-	res, err := GetSlots(context.Background(), c, "home", 7)
+	res, err := GetSlots(context.Background(), c, "home", "", 7)
 	if err != nil {
 		t.Fatalf("GetSlots: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestGetSlots_FlattensV2Grid(t *testing.T) {
 
 func TestGetSlots_MissingSessionDefaults(t *testing.T) {
 	c, _ := client.New(&config.Session{}, nil)
-	if _, err := GetSlots(context.Background(), c, "home", 7); err == nil {
+	if _, err := GetSlots(context.Background(), c, "home", "", 7); err == nil {
 		t.Fatal("expected error when session lacks deliveryDestinationId/regionId")
 	}
 }
@@ -143,7 +144,7 @@ func TestReserveSlot_Body(t *testing.T) {
 	c, _ := client.New(&config.Session{DeliveryDestinationID: "d1", RegionID: "r1"}, nil)
 	c.BaseURL = srv.URL
 
-	res, err := ReserveSlot(context.Background(), c, "s1")
+	res, err := ReserveSlot(context.Background(), c, "home", "", "s1")
 	if err != nil {
 		t.Fatalf("ReserveSlot: %v", err)
 	}
@@ -160,7 +161,83 @@ func TestReserveSlot_Body(t *testing.T) {
 
 func TestReserveSlot_MissingSessionErrors(t *testing.T) {
 	c, _ := client.New(&config.Session{}, nil)
-	if _, err := ReserveSlot(context.Background(), c, "s1"); err == nil {
+	if _, err := ReserveSlot(context.Background(), c, "home", "", "s1"); err == nil {
 		t.Fatal("expected error when session lacks deliveryDestinationId/regionId")
+	}
+}
+
+func TestGetSlots_CCUsesPickupPointDestination(t *testing.T) {
+	var gotBody slotsRequest
+	var gotAddrQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "delivery-addresses") {
+			gotAddrQuery = r.URL.Query().Get("deliveryMethod")
+			// The real endpoint only returns destinations for the requested
+			// deliveryMethod, so a CUSTOMER_COLLECTION query never sees the
+			// home address.
+			_, _ = w.Write([]byte(`[
+				{"deliveryDestinationId":"pickup-dest","resolvedRegionId":"pickup-region","deliveryMethod":"CUSTOMER_COLLECTION","isPrimary":true}
+			]`))
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		_, _ = w.Write([]byte(`{"carriers":[]}`))
+	}))
+	defer srv.Close()
+	// Session only carries the home address, as captured by import-har.
+	c, _ := client.New(&config.Session{DeliveryDestinationID: "home-dest", RegionID: "home-region"}, nil)
+	c.BaseURL = srv.URL
+
+	if _, err := GetSlots(context.Background(), c, "cc", "", 7); err != nil {
+		t.Fatalf("GetSlots: %v", err)
+	}
+	if gotAddrQuery != MethodCC {
+		t.Errorf("delivery-addresses deliveryMethod = %q, want %q", gotAddrQuery, MethodCC)
+	}
+	if gotBody.DeliveryDestinationID != "pickup-dest" || gotBody.RegionID != "pickup-region" {
+		t.Errorf("slots request dest/region = %+v, want the pickup point's, not the home address's", gotBody)
+	}
+}
+
+func TestGetSlots_DestinationOverridePicksNonPrimary(t *testing.T) {
+	var gotBody slotsRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "delivery-addresses") {
+			_, _ = w.Write([]byte(`[
+				{"deliveryDestinationId":"pickup-a","resolvedRegionId":"region-a","deliveryMethod":"CUSTOMER_COLLECTION","isPrimary":true},
+				{"deliveryDestinationId":"pickup-b","resolvedRegionId":"region-b","deliveryMethod":"CUSTOMER_COLLECTION","isPrimary":false}
+			]`))
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		_, _ = w.Write([]byte(`{"carriers":[]}`))
+	}))
+	defer srv.Close()
+	c, _ := client.New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+
+	if _, err := GetSlots(context.Background(), c, "cc", "pickup-b", 7); err != nil {
+		t.Fatalf("GetSlots: %v", err)
+	}
+	if gotBody.DeliveryDestinationID != "pickup-b" || gotBody.RegionID != "region-b" {
+		t.Errorf("slots request dest/region = %+v, want the explicitly requested pickup point", gotBody)
+	}
+}
+
+func TestGetSlots_DestinationOverrideNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"deliveryDestinationId":"pickup-a","resolvedRegionId":"region-a","isPrimary":true}]`))
+	}))
+	defer srv.Close()
+	c, _ := client.New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+
+	if _, err := GetSlots(context.Background(), c, "cc", "does-not-exist", 7); err == nil {
+		t.Fatal("expected error for unknown destination override")
 	}
 }

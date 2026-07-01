@@ -47,6 +47,15 @@ func loadConfig(f *Flags) (*config.Config, error) {
 	return config.LoadConfig()
 }
 
+// saveConfig mirrors loadConfig's --config precedence so `delivery use`
+// writes back to whatever config.json the caller is already pointed at.
+func saveConfig(f *Flags, cfg *config.Config) error {
+	if f != nil && f.Config != "" {
+		return config.SaveConfigTo(f.Config, cfg)
+	}
+	return config.SaveConfig(cfg)
+}
+
 func (g guard) enabled() bool { return g.max > 0 }
 
 func (g guard) enforceAdd(ctx context.Context, rt runtime, items []api.CartItemInput) error {

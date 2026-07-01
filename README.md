@@ -37,7 +37,8 @@ mutations that would push the projected total over the cap are refused, and it f
 total (or the config) can't be read.
 
 State lives under `~/.bonpreu/` (override with `BONPREU_HOME`): `cookies.json` (session, 0600),
-`config.json` (spending cap; override its path with `--config <path>`), `cache.json` (id lookups).
+`config.json` (spending cap + `delivery use` defaults; override its path with `--config <path>`),
+`cache.json` (id lookups).
 
 ## Commands
 
@@ -69,7 +70,7 @@ bonpreu cart clear
 
 **Delivery**
 ```sh
-bonpreu delivery addresses [-m/--method home|cc]   # addresses or pickup points
+bonpreu delivery addresses [-m/--method home|cc] [--postal <prefix>]   # addresses or pickup points
 bonpreu delivery use <destinationId> [-g/--group home|cc]
 bonpreu slots [-g/--group home|cc] [-d/--days 7] [--destination <id>]
 bonpreu slots reserve <slotId> [-g/--group home|cc] [--destination <id>]
