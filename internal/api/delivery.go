@@ -91,9 +91,9 @@ type SlotsResult struct {
 	Slots             []Slot `json:"slots"`
 }
 
-// groupParams maps the user-facing group ("home"|"cc") to the delivery method
+// GroupParams maps the user-facing group ("home"|"cc") to the delivery method
 // and shipping group type strings the API expects.
-func groupParams(group string) (method, shippingGroupType string, err error) {
+func GroupParams(group string) (method, shippingGroupType string, err error) {
 	switch group {
 	case "home", "":
 		return MethodHome, ShipHome, nil
@@ -107,7 +107,7 @@ func groupParams(group string) (method, shippingGroupType string, err error) {
 // GetSlots posts the ecomslots/v2 grid request for the session's delivery
 // destination + region and flattens the day grid into a single list.
 func GetSlots(ctx context.Context, c *client.Client, group string, days int) (*SlotsResult, error) {
-	_, shippingGroupType, err := groupParams(group)
+	_, shippingGroupType, err := GroupParams(group)
 	if err != nil {
 		return nil, err
 	}

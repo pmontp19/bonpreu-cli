@@ -10,19 +10,6 @@ import (
 	"github.com/pmontp19/bonpreu-cli/internal/api"
 )
 
-// groupMethod maps the user-facing --method/--group value to the API delivery
-// method constant.
-func groupMethod(v string) (string, error) {
-	switch v {
-	case "home", "":
-		return api.MethodHome, nil
-	case "cc":
-		return api.MethodCC, nil
-	default:
-		return "", fmt.Errorf("unknown value %q (want home|cc)", v)
-	}
-}
-
 func newDeliveryCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "delivery",
@@ -45,7 +32,7 @@ func newDeliveryAddressesCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			rt := ctxValue(ctx)
-			m, err := groupMethod(method)
+			m, _, err := api.GroupParams(method)
 			if err != nil {
 				return err
 			}
@@ -107,7 +94,9 @@ func newSlotsCmd() *cobra.Command {
 					avail = "yes"
 				}
 				window := fmt.Sprintf("%s–%s", s.StartTime, s.EndTime)
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", short(s.SlotID), s.Day, window, s.Price, avail)
+				// Full slot ID (not short()): `slots reserve` needs the exact
+				// UUID and there is no slot-id resolver.
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", s.SlotID, s.Day, window, s.Price, avail)
 			}
 			_ = w.Flush()
 			if res.MinimumOrderValue != nil && res.MinimumOrderValue.Amount != "" {
