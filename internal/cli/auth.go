@@ -38,6 +38,9 @@ The HAR is read once and never stored; only the derived session is written to ~/
 			if err := config.SaveSession(sess); err != nil {
 				return err
 			}
+			// Read the flag directly rather than via ctxValue(): ctxValue builds a
+			// client from the pre-import session and memoizes it, which would let
+			// PostRunE's SyncSession clobber the session we just wrote.
 			if f := FromContext(cmd.Context()).Flags; f != nil && f.JSON {
 				return printJSON(sessionSummary(sess))
 			}

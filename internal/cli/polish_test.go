@@ -28,6 +28,13 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(b)
 }
 
+// ctxWithRuntime returns a context carrying a pre-built runtime, so a command's
+// RunE (which fetches its runtime via ctxValue) can be driven against a mock
+// client without going through session loading.
+func ctxWithRuntime(ctx context.Context, rt runtime) context.Context {
+	return context.WithValue(ctx, keyRT, &rtHolder{rt: &rt})
+}
+
 func TestSessionSummary_OmitsSecrets(t *testing.T) {
 	s := &config.Session{
 		Cookies:               map[string]string{"VISITORID": "super-secret-value", "x": "y"},
@@ -61,7 +68,7 @@ func TestCartClear_EmptyJSONEmitsValidJSON(t *testing.T) {
 	c, stop := newGuardClient(t, "", "0")
 	defer stop()
 	rt := runtime{client: c, flags: &Flags{JSON: true}, json: true}
-	ctx := context.WithValue(context.Background(), keyRT, &rtHolder{rt: &rt})
+	ctx := ctxWithRuntime(context.Background(), rt)
 
 	cmd := newCartClearCmd()
 	cmd.SetContext(ctx)
