@@ -42,7 +42,7 @@ Ordered by dependency. Each ≤ ~5 files, one focused session.
   - Verify: unit test HAR parser on a sanitized fixture; manual `whoami` against live session.
   - Files: `internal/client/har.go`, `internal/cli/auth.go`
 
-- [x] **T3 — id resolver + search**  ✅ 2026-06-30 (live search text+json; cache fills; scrape unit-tested — slug `/products/_/<id>` pending live confirm at T5)
+- [x] **T3 — id resolver + search**  ✅ 2026-06-30 (live search text+json; cache fills) — ✅ live 2026-07-01: cold-cache scrape confirmed (`product 20991`, not cached → resolved to uuid + cache filled). 🐛 live testing exposed the scraper read the wrong blob: product data lives in `window.__QUERY_INITIAL_STATE__` (React-Query cache), not `window.__INITIAL_STATE__` (app state / recommendations decoy). Fixed `ExtractInitialState` to prefer the query blob (fallback to app state); homepage CSRF extraction still uses `__INITIAL_STATE__`.
   - Acceptance: `bonpreu search <q> --json` returns products `{productId,retailerProductId,name,price}`; resolver maps numeric→uuid via cache then `__QUERY_INITIAL_STATE__` scrape; cache persists at `~/.bonpreu/cache.json`.
   - Verify: resolver unit test (uuid passthrough, cache hit, scrape fallback on fixture HTML); live `search`.
   - Files: `internal/api/catalog.go`, `internal/client/resolve.go`, `internal/cli/search.go`
@@ -62,7 +62,7 @@ Ordered by dependency. Each ≤ ~5 files, one focused session.
   - Verify: httptest on slots v2 grid fixture; live `slots` for both groups.
   - Files: `internal/api/delivery.go`, `internal/cli/delivery.go`
 
-- [x] **T7 — Orders (read-only) + checkout open**  ✅ 2026-07-01 (httptest: orders list parse+limit, bare-array fallback, decorated denormalize; checkout browserOpenArgs per-OS; `checkout open --json` prints URL) — ✅ live 2026-07-01: `orders list` empty history clean (`--json` → `null`); `orders show <realId>` fully verified live (32 lines, total, `--json` valid). 🐛 live testing exposed a wrong `decorated` shape assumption — real payload has `result`=root-id string, line items under `entities.order[id].items`, and product price nested at `price.current` (not a top-level `result` array with inline price). Fixed `GetOrder` + updated httptest fixture to the real shape.
+- [x] **T7 — Orders (read-only) + checkout open**  ✅ 2026-07-01 (httptest: orders list parse+limit, bare-array fallback, decorated denormalize; checkout browserOpenArgs per-OS; `checkout open --json` prints URL) — ✅ live 2026-07-01: `orders list` empty history clean (`--json` → `null`); `orders show <realId>` fully verified live (32 lines, total, `--json` valid); `checkout open` launches the browser at `/checkout` live (exit 0) and `--json` prints the URL. 🐛 live testing exposed a wrong `decorated` shape assumption — real payload has `result`=root-id string, line items under `entities.order[id].items`, and product price nested at `price.current` (not a top-level `result` array with inline price). Fixed `GetOrder` + updated httptest fixture to the real shape.
   - Acceptance: `orders list` + `orders show <id>` (denormalize `entities.product`); `checkout open` opens browser at `/checkout`.
   - Verify: httptest on `decorated` fixture; live `orders list`.
   - Files: `internal/api/orders.go`, `internal/cli/orders.go`, `internal/cli/checkout.go`

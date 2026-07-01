@@ -223,12 +223,25 @@ func lastPathSegment(p string) string {
 	return p
 }
 
+// ExtractInitialState returns the JSON object embedded on a product page for
+// retailerId→UUID resolution. The product lives in `window.__QUERY_INITIAL_STATE__`
+// (the React-Query cache), not `window.__INITIAL_STATE__` (the general app
+// state, which only carries recommendations/recents). Fall back to the latter
+// for resilience if the query blob is ever absent.
 func ExtractInitialState(html string) (string, bool) {
-	return extractInitialState(html)
+	if js, ok := extractStateObject(html, "window.__QUERY_INITIAL_STATE__="); ok {
+		return js, true
+	}
+	return extractStateObject(html, "window.__INITIAL_STATE__=")
 }
 
+// extractInitialState pulls `window.__INITIAL_STATE__` — used for the homepage
+// CSRF token, which lives in that blob's session.csrf.token.
 func extractInitialState(html string) (string, bool) {
-	marker := "window.__INITIAL_STATE__="
+	return extractStateObject(html, "window.__INITIAL_STATE__=")
+}
+
+func extractStateObject(html, marker string) (string, bool) {
 	idx := strings.Index(html, marker)
 	if idx < 0 {
 		return "", false

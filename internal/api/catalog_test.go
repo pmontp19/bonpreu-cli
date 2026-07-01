@@ -56,7 +56,7 @@ func TestResolveProductID_CacheHit(t *testing.T) {
 }
 
 func TestScrapeProductID_FromHTML(t *testing.T) {
-	html := `<html><script>window.__INITIAL_STATE__={"queries":[{"state":{"data":{"product":{"productId":"98dc2105-04ed-4cd3-9e0b-5fa77dab0176","retailerProductId":"74927"}}}}]}</script></html>`
+	html := `<html><script>window.__QUERY_INITIAL_STATE__={"queries":[{"state":{"data":{"product":{"productId":"98dc2105-04ed-4cd3-9e0b-5fa77dab0176","retailerProductId":"74927"}}}}]}</script></html>`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(html))
 	}))
@@ -70,6 +70,29 @@ func TestScrapeProductID_FromHTML(t *testing.T) {
 	}
 	if got != "98dc2105-04ed-4cd3-9e0b-5fa77dab0176" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestScrapeProductID_PrefersQueryStateOverInitialState(t *testing.T) {
+	// Real product pages carry two blobs: __INITIAL_STATE__ (app state with
+	// recommendations — a decoy that lacks the target id) and
+	// __QUERY_INITIAL_STATE__ (the React-Query cache holding the page product).
+	// The scraper must resolve from the query blob, not the decoy.
+	html := `<html><script>window.__INITIAL_STATE__={"recommendations":[{"productId":"WRONG","retailerProductId":"74927"}]}</script>` +
+		`<script>window.__QUERY_INITIAL_STATE__={"queries":[{"state":{"data":{"product":{"productId":"98dc2105-04ed-4cd3-9e0b-5fa77dab0176","retailerProductId":"74927"}}}}]}</script></html>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(html))
+	}))
+	defer srv.Close()
+	c, _ := client.New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+
+	got, err := scrapeProductID(context.Background(), c, "74927")
+	if err != nil {
+		t.Fatalf("scrape: %v", err)
+	}
+	if got != "98dc2105-04ed-4cd3-9e0b-5fa77dab0176" {
+		t.Fatalf("got %q, want the query-state uuid (not the decoy)", got)
 	}
 }
 
@@ -90,7 +113,7 @@ func TestResolveProductID_NumericNotInCacheErrors(t *testing.T) {
 }
 
 func TestResolveProductID_ScrapeFallback(t *testing.T) {
-	html := `<html><script>window.__INITIAL_STATE__={"queries":[{"state":{"data":{"product":` +
+	html := `<html><script>window.__QUERY_INITIAL_STATE__={"queries":[{"state":{"data":{"product":` +
 		`{"productId":"98dc2105-04ed-4cd3-9e0b-5fa77dab0176","retailerProductId":"74927"}}}}]}</script></html>`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(html))
