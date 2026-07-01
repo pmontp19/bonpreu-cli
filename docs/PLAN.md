@@ -57,12 +57,12 @@ Ordered by dependency. Each ≤ ~5 files, one focused session.
   - Verify: httptest asserts signed-delta body + path; guard math unit tests; live add/remove/set→0 restored.
   - Files: `internal/api/cart.go`, `internal/cli/cart.go`, `internal/cli/guard.go`
 
-- [x] **T6 — Delivery + slots**  ✅ 2026-06-30 (httptest: addresses query, v2 grid flatten w/ availability, reservation body; session-default dest/region, fail-closed on missing) — ⚠️ live `slots`/`reserve` for both groups still pending
+- [x] **T6 — Delivery + slots**  ✅ 2026-06-30 (httptest: addresses query, v2 grid flatten w/ availability, reservation body; session-default dest/region, fail-closed on missing) — ✅ live 2026-07-01: `addresses --method home`, `slots --group home` + `--group cc` (v2 grid flattened, availability), `slots reserve <id>` (returned window/method/expiry); all `--json` valid
   - Acceptance: `delivery addresses --method home|cc`; `slots --group home|cc` flattens the v2 grid; `slots reserve <id>`; both `--json`.
   - Verify: httptest on slots v2 grid fixture; live `slots` for both groups.
   - Files: `internal/api/delivery.go`, `internal/cli/delivery.go`
 
-- [x] **T7 — Orders (read-only) + checkout open**  ✅ 2026-07-01 (httptest: orders list parse+limit, bare-array fallback, decorated denormalize; checkout browserOpenArgs per-OS; `checkout open --json` prints URL) — ⚠️ live `orders list`/`show` still pending (list JSON shape confirmed live)
+- [x] **T7 — Orders (read-only) + checkout open**  ✅ 2026-07-01 (httptest: orders list parse+limit, bare-array fallback, decorated denormalize; checkout browserOpenArgs per-OS; `checkout open --json` prints URL) — ✅ live 2026-07-01: `orders list` returns empty history cleanly (`--json` → `null`, valid). ⚠️ `orders show <id>` denormalize path unexercised live (account has no orders) — remains httptest-covered on the `decorated` fixture
   - Acceptance: `orders list` + `orders show <id>` (denormalize `entities.product`); `checkout open` opens browser at `/checkout`.
   - Verify: httptest on `decorated` fixture; live `orders list`.
   - Files: `internal/api/orders.go`, `internal/cli/orders.go`, `internal/cli/checkout.go`
