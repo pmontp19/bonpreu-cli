@@ -38,6 +38,9 @@ The HAR is read once and never stored; only the derived session is written to ~/
 			if err := config.SaveSession(sess); err != nil {
 				return err
 			}
+			if f := FromContext(cmd.Context()).Flags; f != nil && f.JSON {
+				return printJSON(sessionSummary(sess))
+			}
 			fmt.Fprintf(os.Stderr, "session saved to ~/.bonpreu (region=%s dest=%s cookies=%d csrf=%s)\n",
 				sess.RegionID, sess.DeliveryDestinationID, len(sess.Cookies), maskUUID(sess.CSRFToken))
 			return nil
@@ -117,6 +120,18 @@ func ctxValue(ctx context.Context) runtime {
 		h.rt = &rt
 	}
 	return rt
+}
+
+// sessionSummary is the sanitized, machine-readable view of an imported
+// session — counts and defaults only, never cookie values or the CSRF token.
+func sessionSummary(s *config.Session) map[string]any {
+	return map[string]any{
+		"region":         s.RegionID,
+		"dest":           s.DeliveryDestinationID,
+		"cookies":        len(s.Cookies),
+		"has_csrf":       s.CSRFToken != "",
+		"source_version": s.EcomRequestSourceVersion,
+	}
 }
 
 func printJSON(v any) error {

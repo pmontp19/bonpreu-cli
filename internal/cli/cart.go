@@ -256,8 +256,7 @@ func newCartClearCmd() *cobra.Command {
 			}
 			lines := cart.Lines()
 			if len(lines) == 0 {
-				fmt.Fprintln(os.Stderr, "cart is empty")
-				return nil
+				return printCart(cart, rt.json)
 			}
 			items := make([]api.CartItemInput, 0, len(lines))
 			for _, it := range lines {

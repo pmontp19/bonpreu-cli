@@ -67,7 +67,7 @@ Ordered by dependency. Each ≤ ~5 files, one focused session.
   - Verify: httptest on `decorated` fixture; live `orders list`.
   - Files: `internal/api/orders.go`, `internal/cli/orders.go`, `internal/cli/checkout.go`
 
-- [ ] **T8 — Polish**
+- [x] **T8 — Polish**  ✅ 2026-07-01 (import-har --json + cart clear empty-JSON gaps closed; go vet + go test -race green; README quickstart; testdata gitignored/untracked so no PII/cookies committed)
   - Acceptance: every command honors `--json` (valid JSON, diagnostics on stderr, exit codes); `go vet`+`go test -race` green; README quickstart; testdata sanitized (no PII/cookies).
   - Verify: full `go test ./... -race -cover`; manual JSON-pipe check.
   - Files: `internal/cli/*.go`, `README.md`, `testdata/`

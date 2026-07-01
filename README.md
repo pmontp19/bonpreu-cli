@@ -6,9 +6,33 @@ Unofficial, agent-friendly CLI for `compraonline.bonpreuesclat.cat` — search t
 
 ## Status
 
-**Pre-spec.** API surface is reverse-engineered and documented in [`docs/bonpreu-api-discovery.md`](docs/bonpreu-api-discovery.md); reusable patterns from similar projects in [`docs/reference-mercadona-clis.md`](docs/reference-mercadona-clis.md).
+MVP complete: **Read + Cart + Slots/Shipping + read-only orders + `checkout open` handoff**. Order placement (Braintree 3DS) is deliberately out of scope — the CLI leaves a fully-configured cart and the user completes checkout in the web/app.
 
-Scope (MVP): **Read + Cart + Slots/Shipping**. Order placement (Braintree 3DS) is deliberately out of scope — the CLI leaves a fully-configured cart and the user completes checkout in the web/app.
+API surface is reverse-engineered and documented in [`docs/bonpreu-api-discovery.md`](docs/bonpreu-api-discovery.md); reusable patterns from similar projects in [`docs/reference-mercadona-clis.md`](docs/reference-mercadona-clis.md).
+
+## Quickstart
+
+```sh
+# 1. Build
+go build -o bin/bonpreu ./cmd/bonpreu
+
+# 2. Log in at compraonline.bonpreuesclat.cat in a browser, export a HAR,
+#    then import the session (writes ~/.bonpreu/*, 0600):
+bin/bonpreu import-har --file login.har
+bin/bonpreu whoami                      # verify the session
+
+# 3. Shop
+bin/bonpreu search iogurt --json
+bin/bonpreu cart add <id> 2             # <id> = UUID or numeric retailerProductId
+bin/bonpreu cart get
+bin/bonpreu slots --group home
+bin/bonpreu slots reserve <slotId>
+bin/bonpreu checkout open               # finish 3DS in the browser
+```
+
+Every command accepts `--json` for machine-readable output on stdout (diagnostics go to stderr).
+Guard spending with `--max <eur>` (or `BONPREU_MAX_EUR`): cart mutations that would push the
+projected total over the cap are refused, and it fails closed if the total can't be read.
 
 ## Auth model
 
