@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pmontp19/bonpreu-cli/internal/config"
@@ -91,5 +92,86 @@ func TestDoJSONErrorStatus(t *testing.T) {
 	}
 	if he.Status != http.StatusForbidden {
 		t.Errorf("status = %d, want 403", he.Status)
+	}
+}
+
+func TestHTTPErrorExpiryMessaging(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		he := &HTTPError{Status: status, URL: "/api/order/v6/orders", Body: `{"code":"UNAUTHORIZED"}`}
+		if !he.Expired() {
+			t.Errorf("status %d should be Expired()", status)
+		}
+		msg := he.Error()
+		if !strings.Contains(msg, "import-har") || !strings.Contains(msg, "session expired") {
+			t.Errorf("status %d message = %q, want re-import instruction", status, msg)
+		}
+		if strings.Contains(msg, "UNAUTHORIZED") {
+			t.Errorf("status %d message should not leak raw body: %q", status, msg)
+		}
+	}
+	// A non-auth error keeps the raw body for debugging.
+	other := &HTTPError{Status: http.StatusBadRequest, URL: "/x", Body: "boom"}
+	if other.Expired() {
+		t.Error("400 should not be Expired()")
+	}
+	if !strings.Contains(other.Error(), "boom") {
+		t.Errorf("400 message should include body, got %q", other.Error())
+	}
+}
+
+func TestDoRaw(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bad" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte("nope"))
+			return
+		}
+		_, _ = w.Write([]byte("<html>hi</html>"))
+	}))
+	defer srv.Close()
+	c, _ := New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+
+	data, err := c.DoRaw(context.Background(), http.MethodGet, "/page")
+	if err != nil {
+		t.Fatalf("DoRaw: %v", err)
+	}
+	if string(data) != "<html>hi</html>" {
+		t.Errorf("body = %q", data)
+	}
+
+	if _, err := c.DoRaw(context.Background(), http.MethodGet, "/bad"); err == nil {
+		t.Fatal("expected error on 401")
+	} else if he, ok := err.(*HTTPError); !ok || !he.Expired() {
+		t.Errorf("expected expired HTTPError, got %v", err)
+	}
+}
+
+func TestSyncSessionFoldsCookiesAndCSRF(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("x-csrf-token", "rotated-2")
+		http.SetCookie(w, &http.Cookie{Name: "global_sid", Value: "fresh"})
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	sess := &config.Session{Cookies: map[string]string{"global_sid": "old"}, CSRFToken: "old-csrf"}
+	c, _ := New(sess, nil)
+	c.BaseURL = srv.URL
+
+	if err := c.DoJSON(context.Background(), http.MethodGet, "/x", nil, nil); err != nil {
+		t.Fatalf("DoJSON: %v", err)
+	}
+	if !c.SyncSession() {
+		t.Fatal("SyncSession should report a change")
+	}
+	if sess.CSRFToken != "rotated-2" {
+		t.Errorf("csrf = %q, want rotated-2", sess.CSRFToken)
+	}
+	if sess.Cookies["global_sid"] != "fresh" {
+		t.Errorf("cookie = %q, want fresh", sess.Cookies["global_sid"])
+	}
+	// A second sync with no further changes reports false.
+	if c.SyncSession() {
+		t.Error("SyncSession with no changes should report false")
 	}
 }

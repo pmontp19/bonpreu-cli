@@ -69,3 +69,33 @@ func TestPriceOf(t *testing.T) {
 		t.Fatalf("PriceOf = %v %v", p, err)
 	}
 }
+
+func TestGetActiveCartAndHelpers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/cart/v1/carts/active" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"cartId":"cart-1","items":[
+			{"productId":"u1","quantity":2,"totalPrice":{"currency":"EUR","amount":"3.80"}},
+			{"productId":"u2","quantity":1,"totalPrice":{"currency":"EUR","amount":"1.00"}}
+		],"totals":{"checkoutTotalPrice":{"currency":"EUR","amount":"4.80"}}}`))
+	}))
+	defer srv.Close()
+	c, _ := client.New(&config.Session{}, nil)
+	c.BaseURL = srv.URL
+
+	cart, err := GetActiveCart(context.Background(), c)
+	if err != nil {
+		t.Fatalf("GetActiveCart: %v", err)
+	}
+	if len(cart.Lines()) != 2 {
+		t.Fatalf("lines = %d, want 2", len(cart.Lines()))
+	}
+	if cart.QtyOf("u1") != 2 {
+		t.Errorf("QtyOf(u1) = %d, want 2", cart.QtyOf("u1"))
+	}
+	if cart.QtyOf("missing") != 0 {
+		t.Errorf("QtyOf(missing) = %d, want 0", cart.QtyOf("missing"))
+	}
+}

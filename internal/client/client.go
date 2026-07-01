@@ -190,7 +190,21 @@ type HTTPError struct {
 	Body   string
 }
 
+// Expired reports whether the status indicates a stale or rejected session
+// (401 unauthorized) or a WAF/authorization block (403). Both are recovered
+// by re-importing a fresh HAR.
+func (e *HTTPError) Expired() bool {
+	return e.Status == http.StatusUnauthorized || e.Status == http.StatusForbidden
+}
+
 func (e *HTTPError) Error() string {
+	if e.Expired() {
+		// The raw upstream body for auth failures is opaque WAF/JSON noise;
+		// surface an actionable instruction instead. The full body is still
+		// available via Body for verbose diagnostics.
+		return fmt.Sprintf("session expired or unauthorized (HTTP %d at %s) — re-run `bonpreu import-har --file <fresh.har>` to refresh your session",
+			e.Status, e.URL)
+	}
 	return fmt.Sprintf("bonpreu %s: HTTP %d: %s", e.URL, e.Status, e.Body)
 }
 

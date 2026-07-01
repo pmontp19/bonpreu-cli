@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -64,6 +65,11 @@ func newWhoamiCmd() *cobra.Command {
 			c := ctxValue(ctx)
 			cart, err := api.GetActiveCart(ctx, c.client)
 			if err != nil {
+				var he *client.HTTPError
+				if errors.As(err, &he) && he.Expired() {
+					// HTTPError already carries the actionable re-import message.
+					return err
+				}
 				return fmt.Errorf("session check failed (re-run import-har if expired): %w", err)
 			}
 			lines := cart.Lines()

@@ -104,6 +104,31 @@ func TestGetSlots_MissingSessionDefaults(t *testing.T) {
 	}
 }
 
+func TestGroupParams(t *testing.T) {
+	cases := []struct {
+		group      string
+		wantMethod string
+		wantErr    bool
+	}{
+		{"home", MethodHome, false},
+		{"", MethodHome, false},
+		{"cc", MethodCC, false},
+		{"bogus", "", true},
+	}
+	for _, tc := range cases {
+		method, _, err := GroupParams(tc.group)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("group %q: expected error", tc.group)
+			}
+			continue
+		}
+		if err != nil || method != tc.wantMethod {
+			t.Errorf("group %q: method=%q err=%v", tc.group, method, err)
+		}
+	}
+}
+
 func TestReserveSlot_Body(t *testing.T) {
 	var gotPath string
 	var gotBody reservationRequest
