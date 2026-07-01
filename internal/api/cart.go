@@ -81,6 +81,16 @@ func (c *Cart) QtyOf(productID string) int {
 	return 0
 }
 
+// TotalUnits sums line quantities — the site's "articles" count. It differs
+// from len(Lines()), which counts distinct products.
+func (c *Cart) TotalUnits() int {
+	n := 0
+	for _, it := range c.Lines() {
+		n += it.Quantity
+	}
+	return n
+}
+
 func (c *Cart) TotalAmount() string {
 	if c.Totals.ItemPriceAfterPromos != nil && c.Totals.ItemPriceAfterPromos.Amount != "" {
 		return c.Totals.ItemPriceAfterPromos.Amount

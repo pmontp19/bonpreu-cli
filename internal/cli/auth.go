@@ -72,15 +72,16 @@ func newWhoamiCmd() *cobra.Command {
 				}
 				return fmt.Errorf("session check failed (re-run import-har if expired): %w", err)
 			}
-			lines := cart.Lines()
 			summary := struct {
-				Items int    `json:"items"`
-				Total string `json:"total"`
-			}{Items: len(lines), Total: cart.TotalAmount()}
+				Products int    `json:"products"` // distinct product lines
+				Articles int    `json:"articles"` // total units (site's "articles" count)
+				Total    string `json:"total"`
+			}{Products: len(cart.Lines()), Articles: cart.TotalUnits(), Total: cart.TotalAmount()}
 			if ctxValue(ctx).json {
 				return printJSON(summary)
 			}
-			fmt.Printf("session OK — %d items, total %s €\n", summary.Items, summary.Total)
+			fmt.Printf("session OK — %d products / %d articles, total %s €\n",
+				summary.Products, summary.Articles, summary.Total)
 			return nil
 		},
 	}
