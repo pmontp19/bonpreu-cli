@@ -27,15 +27,47 @@ func newCartCmd() *cobra.Command {
 	return cmd
 }
 
-func printCart(cart *api.Cart, jsonOut bool) error {
-	if jsonOut {
+// enrichNames fills in Name for lines the cart endpoint returned without one
+// (which is the common case — /carts/active doesn't carry product names) via
+// a single batched GetProducts call. Best-effort: on any failure it returns
+// lines unchanged, so callers fall back to printing the UUID.
+func enrichNames(ctx context.Context, rt runtime, lines []api.CartItem) []api.CartItem {
+	var missing []string
+	for _, it := range lines {
+		if it.Name == "" {
+			missing = append(missing, it.ProductID)
+		}
+	}
+	if len(missing) == 0 {
+		return lines
+	}
+	prods, err := api.GetProducts(ctx, rt.client, missing)
+	if err != nil {
+		return lines
+	}
+	names := make(map[string]string, len(prods))
+	for _, p := range prods {
+		names[p.ProductID] = p.Name
+	}
+	for i := range lines {
+		if lines[i].Name == "" {
+			if n := names[lines[i].ProductID]; n != "" {
+				lines[i].Name = n
+			}
+		}
+	}
+	return lines
+}
+
+func printCart(ctx context.Context, rt runtime, cart *api.Cart) error {
+	lines := enrichNames(ctx, rt, cart.Lines())
+	if rt.json {
 		return printJSON(struct {
 			Items int            `json:"items"`
 			Total string         `json:"total"`
 			Lines []api.CartItem `json:"lines"`
-		}{Items: len(cart.Lines()), Total: cart.TotalAmount(), Lines: cart.Lines()})
+		}{Items: len(lines), Total: cart.TotalAmount(), Lines: lines})
 	}
-	lines := cart.Lines()
 	if len(lines) == 0 {
 		fmt.Fprintln(os.Stderr, "cart is empty")
 		return nil
@@ -64,7 +96,7 @@ func newCartGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printCart(cart, rt.json)
+			return printCart(ctx, rt, cart)
 		},
 	}
 }
@@ -117,7 +149,7 @@ func mutateDelta(cmd *cobra.Command, args []string, sign int) error {
 	if err != nil {
 		return err
 	}
-	return printCart(cart, rt.json)
+	return printCart(ctx, rt, cart)
 }
 
 func newCartSetCmd() *cobra.Command {
@@ -142,7 +174,7 @@ func newCartSetCmd() *cobra.Command {
 			}
 			delta := target - cart.QtyOf(uuid)
 			if delta == 0 {
-				return printCart(cart, rt.json)
+				return printCart(ctx, rt, cart)
 			}
 			items := []api.CartItemInput{{ProductID: uuid, Quantity: delta}}
 			if delta > 0 {
@@ -158,7 +190,7 @@ func newCartSetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printCart(cart, rt.json)
+			return printCart(ctx, rt, cart)
 		},
 	}
 }
@@ -202,7 +234,7 @@ func newCartAddManyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printCart(cart, rt.json)
+			return printCart(ctx, rt, cart)
 		},
 	}
 	cmd.Flags().StringP("file", "f", "", "JSON-lines file (each line {\"id\",\"qty\"}); '-' or omit for stdin")
@@ -256,7 +288,7 @@ func newCartClearCmd() *cobra.Command {
 			}
 			lines := cart.Lines()
 			if len(lines) == 0 {
-				return printCart(cart, rt.json)
+				return printCart(ctx, rt, cart)
 			}
 			items := make([]api.CartItemInput, 0, len(lines))
 			for _, it := range lines {
@@ -266,7 +298,7 @@ func newCartClearCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printCart(cart, rt.json)
+			return printCart(ctx, rt, cart)
 		},
 	}
 }
