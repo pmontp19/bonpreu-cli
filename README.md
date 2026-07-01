@@ -39,15 +39,55 @@ total (or the config) can't be read.
 State lives under `~/.bonpreu/` (override with `BONPREU_HOME`): `cookies.json` (session, 0600),
 `config.json` (spending cap; override its path with `--config <path>`), `cache.json` (id lookups).
 
+## Commands
+
+`<id>` accepts either a UUID or a numeric `retailerProductId`; the CLI resolves and caches the mapping.
+
+**Session**
+```sh
+bonpreu import-har --file login.har   # parse a HAR export, save cookies+csrf (0600)
+bonpreu whoami                        # verify the session, print cart summary
+```
+
+**Catalog**
+```sh
+bonpreu search <query> [-l/--limit 30]   # search, with retailerId + uuid + price
+bonpreu product <id>                     # a single product
+bonpreu related <retailerId>             # related product uuids
+bonpreu categories [-d/--depth 4]        # category tree
+```
+
+**Cart**
+```sh
+bonpreu cart get
+bonpreu cart add <id> [qty=1]
+bonpreu cart remove <id> [qty=1]
+bonpreu cart set <id> <qty>
+bonpreu cart add-many [-f file|-]        # JSON-lines: {"id":..,"qty":..} per line
+bonpreu cart clear
+```
+
+**Delivery**
+```sh
+bonpreu delivery addresses [-m/--method home|cc]   # addresses or pickup points
+bonpreu delivery use <destinationId> [-g/--group home|cc]
+bonpreu slots [-g/--group home|cc] [-d/--days 7] [--destination <id>]
+bonpreu slots reserve <slotId> [-g/--group home|cc] [--destination <id>]
+```
+
+**Checkout & orders**
+```sh
+bonpreu checkout open        # opens the browser at /checkout to finish 3DS
+bonpreu orders list [-n/--limit 0]
+bonpreu orders show <orderId>
+```
+
+`bonpreu <command> --help` shows flags for any command; `bonpreu completion <shell>` generates a
+shell-completion script (bash/zsh/fish/powershell — a stock Cobra feature, no custom values).
+
 ## Auth model
 
-OIDC cookie session (no client-side refresh token). Login once in a browser, export a HAR, `bonpreu import-har` extracts the session cookies + CSRF token. Re-import when the session (~3 months) expires.
-
-## Build
-
-```sh
-go build -o bin/bonpreu ./cmd/bonpreu
-```
+OIDC cookie session (no client-side refresh token). Login once in a browser, export a HAR, `bonpreu import-har` extracts the session cookies + CSRF token. Re-import when the session (~3 months, verified against the real `VISITORID` cookie's `Max-Age`) expires.
 
 ## Layout
 
