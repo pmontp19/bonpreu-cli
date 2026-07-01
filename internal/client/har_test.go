@@ -17,17 +17,20 @@ func TestParseSession_RealHAR(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseSession: %v", err)
 	}
-	if s.CSRFToken != "00000000-0000-0000-0000-000000000001" {
-		t.Errorf("csrf = %q, want the token from __INITIAL_STATE__", s.CSRFToken)
+	// testdata/login.har is a real, gitignored capture (never committed) — assert
+	// shape/format here, not literal values, so this test never depends on (or
+	// leaks, if ever accidentally committed) real session data.
+	if !IsUUID(s.CSRFToken) {
+		t.Errorf("csrf = %q, want a UUID from __INITIAL_STATE__", s.CSRFToken)
 	}
-	if s.EcomRequestSourceVersion != "2.0.0-2026-06-30-12h34m48s-35c69f8f" {
-		t.Errorf("ecom-version = %q", s.EcomRequestSourceVersion)
+	if s.EcomRequestSourceVersion == "" {
+		t.Error("ecom-version missing")
 	}
-	if s.RegionID != "00000000-0000-0000-0000-000000000002" {
-		t.Errorf("regionId = %q", s.RegionID)
+	if !IsUUID(s.RegionID) {
+		t.Errorf("regionId = %q, want a UUID", s.RegionID)
 	}
-	if s.DeliveryDestinationID != "00000000-0000-0000-0000-000000000003" {
-		t.Errorf("deliveryDestinationId = %q", s.DeliveryDestinationID)
+	if !IsUUID(s.DeliveryDestinationID) {
+		t.Errorf("deliveryDestinationId = %q, want a UUID", s.DeliveryDestinationID)
 	}
 	for _, k := range []string{"VISITORID", "global_sid", "AWSALB", "aws-waf-token"} {
 		if s.Cookies[k] == "" {
