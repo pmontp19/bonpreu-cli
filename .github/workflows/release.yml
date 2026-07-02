@@ -1,0 +1,78 @@
+name: release
+
+# Tag push does a normal release. workflow_dispatch lets you re-run a release
+# for an existing tag by hand (e.g. to repair a partial/failed run) without
+# re-tagging — the "check existing release" step keeps that idempotent.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re-)release, e.g. v0.2.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ref='${{ inputs.tag }}'
+          else
+            ref="${GITHUB_REF_NAME}"
+          fi
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
+          fetch-depth: 0
+
+      # Idempotency guard: if this tag already has a published release WITH
+      # assets, skip GoReleaser so a manual re-run can't fail on "release
+      # already exists" or clobber good artifacts. A release carrying zero
+      # assets (a partial/failed run) is treated as incomplete and re-run.
+      - name: Check existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='${{ steps.tag.outputs.ref }}'
+          if n=$(gh release view "$tag" --json assets --jq '.assets | length' 2>/dev/null); then
+            :
+          else
+            n=0
+          fi
+          echo "assets=${n}" >> "$GITHUB_OUTPUT"
+          if [ "${n}" -gt 0 ]; then
+            echo "Release ${tag} already has ${n} assets — skipping GoReleaser."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Go
+        if: steps.existing.outputs.skip != 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Run GoReleaser
+        if: steps.existing.outputs.skip != 'true'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # On workflow_dispatch there is no pushed tag ref, so tell GoReleaser
+          # which tag to build the release from.
+          GORELEASER_CURRENT_TAG: ${{ steps.tag.outputs.ref }}
