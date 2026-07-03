@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -51,6 +52,92 @@ The HAR is read once and never stored; only the derived session is written to ~/
 		},
 	}
 	cmd.Flags().StringP("file", "f", "", "path to the exported .har file (required)")
+	return cmd
+}
+
+func newImportCurlCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "import-curl [--file <path>|-]",
+		Short: "Import a session from a devtools \"Copy as cURL\" command",
+		Long: `Capture an authenticated session from a browser "Copy as cURL".
+
+In the devtools Network panel, right-click any request to compraonline.bonpreuesclat.cat
+made while logged in → Copy → "Copy as cURL", then pipe or paste it here. Unlike a HAR
+export (which recent Chrome sanitizes, stripping the Cookie and x-csrf-token headers),
+"Copy as cURL" carries the request verbatim, so it reliably captures the session in one
+click.
+
+Reads stdin by default, or --file <path> ("-" is stdin). The input is parsed once and never
+stored; only the derived session is written to ~/.bonpreu/ (0600). A missing CSRF token is
+derived from the homepage, and the home delivery destination is resolved from the account so
+slots work out of the box.`,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			file, _ := cmd.Flags().GetString("file")
+			r := io.Reader(os.Stdin)
+			if file != "" && file != "-" {
+				f, err := os.Open(file)
+				if err != nil {
+					return fmt.Errorf("open curl file: %w", err)
+				}
+				defer f.Close()
+				r = f
+			}
+			sess, err := client.ParseCurl(r)
+			if err != nil {
+				return fmt.Errorf("parse curl: %w", err)
+			}
+
+			ctx := cmd.Context()
+			logger := FromContext(ctx).Logger
+			// Build the client directly (not via ctxValue) so root's PostRunE
+			// SyncSession does not clobber the session we save here.
+			c, err := client.New(sess, logger)
+			if err != nil {
+				return err
+			}
+			// Derive the CSRF token from the homepage if the copied request had none.
+			if sess.CSRFToken == "" {
+				if _, err := c.RefreshCSRF(ctx); err != nil {
+					return fmt.Errorf("could not derive CSRF token from homepage: %w", err)
+				}
+			}
+			// Refuse to save a session that is not actually logged in.
+			if status, serr := api.GetAccountStatus(ctx, c); serr == nil && !status.Authenticated {
+				return fmt.Errorf("the copied request is not from a logged-in session " +
+					"(homepage reports not logged in) — log in in the browser first, then copy an authenticated request")
+			}
+			// Best-effort: resolve the account's primary home destination/region so
+			// `slots` works without a separate `delivery use`. Non-fatal on failure.
+			if sess.DeliveryDestinationID == "" || sess.RegionID == "" {
+				if addrs, aerr := api.GetDeliveryAddresses(ctx, c, api.MethodHome); aerr == nil && len(addrs) > 0 {
+					best := addrs[0]
+					for _, a := range addrs {
+						if a.IsPrimary {
+							best = a
+							break
+						}
+					}
+					sess.DeliveryDestinationID = best.DeliveryDestinationID
+					sess.RegionID = best.ResolvedRegionID
+				} else if aerr != nil && logger != nil {
+					logger.Printf("warning: could not resolve home delivery destination: %v", aerr)
+				}
+			}
+			// Fold any cookies/CSRF refreshed by the requests above into the session.
+			c.SyncSession()
+			if err := config.SaveSession(sess); err != nil {
+				return err
+			}
+			if f := FromContext(ctx).Flags; f != nil && f.JSON {
+				return printJSON(sessionSummary(sess))
+			}
+			fmt.Fprintf(os.Stderr, "session saved to ~/.bonpreu (region=%s dest=%s cookies=%d csrf=%s)\n",
+				sess.RegionID, sess.DeliveryDestinationID, len(sess.Cookies), maskUUID(sess.CSRFToken))
+			return nil
+		},
+	}
+	cmd.Flags().StringP("file", "f", "", "file with the curl command (default stdin; \"-\" is stdin)")
 	return cmd
 }
 
