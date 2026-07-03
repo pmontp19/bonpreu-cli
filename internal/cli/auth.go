@@ -57,12 +57,28 @@ The HAR is read once and never stored; only the derived session is written to ~/
 func newWhoamiCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:           "whoami",
-		Short:         "Verify the saved session by fetching the active cart",
+		Short:         "Verify the saved session (account auth + active cart)",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			c := ctxValue(ctx)
+
+			// The guest cart responds even when the account session has lapsed,
+			// so checking the cart alone gives a false "OK". Verify account-level
+			// auth first via the homepage session.isLoggedIn flag.
+			status, serr := api.GetAccountStatus(ctx, c.client)
+			if serr == nil && !status.Authenticated {
+				return fmt.Errorf("session is anonymous or account auth has expired " +
+					"(the guest cart still works, but orders/wallet/slots/delivery do not) — " +
+					"re-run `bonpreu import-har --file <fresh.har>` to refresh your session")
+			}
+			if serr != nil {
+				// Could not reach/parse the homepage; fall back to the cart check
+				// and note that account auth is unverified.
+				c.log("warning: could not verify account auth: %v", serr)
+			}
+
 			cart, err := api.GetActiveCart(ctx, c.client)
 			if err != nil {
 				var he *client.HTTPError
@@ -72,16 +88,22 @@ func newWhoamiCmd() *cobra.Command {
 				}
 				return fmt.Errorf("session check failed (re-run import-har if expired): %w", err)
 			}
+			authenticated := serr == nil && status.Authenticated
 			summary := struct {
-				Products int    `json:"products"` // distinct product lines
-				Articles int    `json:"articles"` // total units (site's "articles" count)
-				Total    string `json:"total"`
-			}{Products: len(cart.Lines()), Articles: cart.TotalUnits(), Total: cart.TotalAmount()}
+				Authenticated bool   `json:"authenticated"`
+				Products      int    `json:"products"` // distinct product lines
+				Articles      int    `json:"articles"` // total units (site's "articles" count)
+				Total         string `json:"total"`
+			}{Authenticated: authenticated, Products: len(cart.Lines()), Articles: cart.TotalUnits(), Total: cart.TotalAmount()}
 			if ctxValue(ctx).json {
 				return printJSON(summary)
 			}
-			fmt.Printf("session OK — %d products / %d articles, total %s €\n",
-				summary.Products, summary.Articles, summary.Total)
+			auth := "authenticated"
+			if !authenticated {
+				auth = "account auth UNVERIFIED"
+			}
+			fmt.Printf("session OK (%s) — %d products / %d articles, total %s €\n",
+				auth, summary.Products, summary.Articles, summary.Total)
 			return nil
 		},
 	}
