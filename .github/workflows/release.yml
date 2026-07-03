@@ -31,7 +31,7 @@ jobs:
           fi
           echo "ref=${ref}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ steps.tag.outputs.ref }}
           fetch-depth: 0
@@ -61,7 +61,7 @@ jobs:
 
       - name: Set up Go
         if: steps.existing.outputs.skip != 'true'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.26"
 
