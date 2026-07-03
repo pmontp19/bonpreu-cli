@@ -17,10 +17,11 @@ API surface is reverse-engineered and documented in [`docs/bonpreu-api-discovery
 #    Installs to $(go env GOPATH)/bin — make sure that's on your PATH.
 go install github.com/pmontp19/bonpreu-cli/cmd/bonpreu@latest
 
-# 2. Log in at compraonline.bonpreuesclat.cat in a browser, export a HAR,
-#    then import the session (writes ~/.bonpreu/*, 0600):
-bonpreu import-har --file login.har
-bonpreu whoami                          # verify the session
+# 2. Log in at compraonline.bonpreuesclat.cat in a browser, then capture the
+#    session (writes ~/.bonpreu/*, 0600). Recommended: devtools → right-click an
+#    authenticated /api/… request → Copy → "Copy as cURL", then:
+pbpaste | bonpreu import-curl -
+bonpreu whoami                          # verify account auth
 
 # 3. Shop
 bonpreu search iogurt --json
@@ -46,8 +47,9 @@ State lives under `~/.bonpreu/` (override with `BONPREU_HOME`): `cookies.json` (
 
 **Session**
 ```sh
-bonpreu import-har --file login.har   # parse a HAR export, save cookies+csrf (0600)
-bonpreu whoami                        # verify the session, print cart summary
+bonpreu import-curl -                 # import from a devtools "Copy as cURL" (recommended; stdin or --file)
+bonpreu import-har --file login.har   # parse a HAR export, save cookies+csrf (0600) — needs an unsanitized HAR
+bonpreu whoami                        # verify account auth + print cart summary
 bonpreu loyalty                       # Guardiola (loyalty wallet) balance
 ```
 
@@ -94,7 +96,19 @@ shell-completion script (bash/zsh/fish/powershell — a stock Cobra feature, no 
 
 ## Auth model
 
-OIDC cookie session (no client-side refresh token). Login once in a browser, export a HAR, `bonpreu import-har` extracts the session cookies + CSRF token. Re-import when the session (~3 months, verified against the real `VISITORID` cookie's `Max-Age`) expires.
+OIDC cookie session (no client-side refresh token). Log in once in a browser, then capture the session — `bonpreu import-curl` (recommended) or `bonpreu import-har` — to extract the session cookies + CSRF token. Re-import when the session expires.
+
+The account session rides on the `global_sid` cookie, which is a **session cookie with no `Max-Age`/`Expires`** — its lifetime is decided server-side (OIDC session TTL, on the order of hours/days), so it cannot be predicted from the cookie itself. The long-lived `VISITORID` cookie (`Max-Age` ≈ 91 days) is only a visitor/tracking id: it keeps *anonymous* access alive (search, guest cart) long after the login session has lapsed, so a working cart is **not** proof you are still logged in. Use `bonpreu whoami`, which verifies account-level auth (the homepage `session.isLoggedIn` flag) rather than just guest-cart access, and re-import when it reports the session is anonymous/expired.
+
+**Capturing a session — prefer `import-curl`.** Recent Chrome (~v118+) **sanitizes HAR exports**, stripping the `Cookie` and `x-csrf-token` headers, so a default HAR makes `import-har` fail with "no session cookies found". The reliable one-click path is to copy a single authenticated request as cURL — devtools Network panel → right-click any `/api/…` request made while logged in → Copy → **Copy as cURL** — and pipe it in:
+
+```sh
+pbpaste | bonpreu import-curl -        # or: bonpreu import-curl --file req.txt
+```
+
+"Copy as cURL" is not sanitized, so it carries the cookies and CSRF token. `import-har` still works if you enable DevTools' "Allow to generate HAR with sensitive data".
+
+The CSRF token rotates server-side; the CLI refreshes it automatically from the homepage when a mutation is rejected, so a stale token no longer forces a re-import — only an expired *account* session does.
 
 ## Layout
 
