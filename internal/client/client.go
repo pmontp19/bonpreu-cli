@@ -96,57 +96,31 @@ func (c *Client) NewRequest(ctx context.Context, method, urlPath string, body io
 }
 
 func (c *Client) DoRaw(ctx context.Context, method, urlPath string) ([]byte, error) {
-	req, err := c.NewRequest(ctx, method, urlPath, nil)
+	data, status, err := c.doWithCSRFRetry(ctx, method, urlPath, nil, false)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http: %w", err)
-	}
-	defer resp.Body.Close()
-	c.captureCSRF(resp)
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxRawBodyBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
-	}
-	if len(data) > maxRawBodyBytes {
-		return nil, fmt.Errorf("response body exceeds %d bytes", maxRawBodyBytes)
-	}
-	if resp.StatusCode >= 400 {
-		return nil, &HTTPError{Status: resp.StatusCode, URL: urlPath, Body: truncate(data, 500)}
+	if status >= 400 {
+		return nil, &HTTPError{Status: status, URL: urlPath, Body: truncate(data, 500)}
 	}
 	return data, nil
 }
 
 func (c *Client) DoJSON(ctx context.Context, method, urlPath string, in any, out any) error {
-	var body io.Reader
+	var body []byte
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
 			return fmt.Errorf("encode body: %w", err)
 		}
-		body = bytes.NewReader(b)
+		body = b
 	}
-	req, err := c.NewRequest(ctx, method, urlPath, body)
+	data, status, err := c.doWithCSRFRetry(ctx, method, urlPath, body, in != nil)
 	if err != nil {
 		return err
 	}
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	}
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return fmt.Errorf("http: %w", err)
-	}
-	defer resp.Body.Close()
-	c.captureCSRF(resp)
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read body: %w", err)
-	}
-	if resp.StatusCode >= 400 {
-		return &HTTPError{Status: resp.StatusCode, URL: urlPath, Body: truncate(data, 500)}
+	if status >= 400 {
+		return &HTTPError{Status: status, URL: urlPath, Body: truncate(data, 500)}
 	}
 	if out != nil && len(data) > 0 {
 		if err := json.Unmarshal(data, out); err != nil {
@@ -154,6 +128,93 @@ func (c *Client) DoJSON(ctx context.Context, method, urlPath string, in any, out
 		}
 	}
 	return nil
+}
+
+// do performs a single request and returns the response body and status.
+// Only transport-level failures produce a non-nil error; HTTP error statuses
+// are returned so callers (and the CSRF-retry wrapper) can interpret them.
+func (c *Client) do(ctx context.Context, method, urlPath string, body []byte, jsonBody bool) ([]byte, int, error) {
+	var r io.Reader
+	if body != nil {
+		r = bytes.NewReader(body)
+	}
+	req, err := c.NewRequest(ctx, method, urlPath, r)
+	if err != nil {
+		return nil, 0, err
+	}
+	if jsonBody {
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("http: %w", err)
+	}
+	defer resp.Body.Close()
+	c.captureCSRF(resp)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxRawBodyBytes+1))
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("read body: %w", err)
+	}
+	if len(data) > maxRawBodyBytes {
+		return nil, resp.StatusCode, fmt.Errorf("response body exceeds %d bytes", maxRawBodyBytes)
+	}
+	return data, resp.StatusCode, nil
+}
+
+// doWithCSRFRetry runs the request once; on a 403 (typically a stale, rotated
+// CSRF token — GETs still pass but state-changing POSTs are rejected) it
+// refreshes the token from the homepage and retries exactly once. If the
+// refresh yields no new token, the original 403 stands so the caller can
+// surface the "re-import HAR" message for a genuinely dead session.
+func (c *Client) doWithCSRFRetry(ctx context.Context, method, urlPath string, body []byte, jsonBody bool) ([]byte, int, error) {
+	data, status, err := c.do(ctx, method, urlPath, body, jsonBody)
+	if err != nil || status != http.StatusForbidden {
+		return data, status, err
+	}
+	changed, rerr := c.RefreshCSRF(ctx)
+	if rerr != nil {
+		c.Log.Printf("csrf refresh failed after 403: %v", rerr)
+		return data, status, nil
+	}
+	if !changed {
+		return data, status, nil
+	}
+	c.Log.Printf("csrf token was stale; refreshed from homepage and retrying %s", urlPath)
+	return c.do(ctx, method, urlPath, body, jsonBody)
+}
+
+// RefreshCSRF re-fetches the homepage and adopts a rotated CSRF token from
+// window.__INITIAL_STATE__.session.csrf.token. It uses do() directly (never
+// the retry wrapper) so a 403 here can't recurse. Returns true if the token
+// changed. A nil error with changed=false means the token was already current.
+// It is also used by the import flows to fill in a CSRF token that was not
+// present in the imported request.
+func (c *Client) RefreshCSRF(ctx context.Context) (bool, error) {
+	if c.Sess == nil {
+		return false, nil
+	}
+	data, status, err := c.do(ctx, http.MethodGet, "/", nil, false)
+	if err != nil {
+		return false, err
+	}
+	if status >= 400 {
+		return false, &HTTPError{Status: status, URL: "/", Body: truncate(data, 500)}
+	}
+	js, ok := extractInitialState(string(data))
+	if !ok {
+		return false, fmt.Errorf("no __INITIAL_STATE__ on homepage")
+	}
+	var st initialState
+	if err := json.Unmarshal([]byte(js), &st); err != nil {
+		return false, fmt.Errorf("parse homepage state: %w", err)
+	}
+	tok := st.Session.CSRF.Token
+	if tok == "" || tok == c.Sess.CSRFToken {
+		return false, nil
+	}
+	c.Sess.CSRFToken = tok
+	c.dirty = true
+	return true, nil
 }
 
 // captureCSRF records a rotated CSRF token from a response and marks the

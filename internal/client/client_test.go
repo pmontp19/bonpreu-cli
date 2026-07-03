@@ -147,6 +147,91 @@ func TestDoRaw(t *testing.T) {
 	}
 }
 
+// TestDoJSONRefreshesStaleCSRFAndRetries exercises the common failure mode:
+// a rotated server-side CSRF token makes a mutating POST 403 while the session
+// itself is live. The client should fetch `/`, adopt the fresh token from
+// __INITIAL_STATE__, and retry once — succeeding without a HAR re-import.
+func TestDoJSONRefreshesStaleCSRFAndRetries(t *testing.T) {
+	const freshToken = "fresh-csrf-token"
+	var postAttempts int
+	var lastPostToken string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			// Homepage carries the live token in the SSR state blob.
+			_, _ = w.Write([]byte(`<html><script>window.__INITIAL_STATE__={"session":{"csrf":{"token":"` + freshToken + `"}}};</script></html>`))
+			return
+		}
+		// The mutating endpoint: reject the stale token, accept the fresh one.
+		postAttempts++
+		lastPostToken = r.Header.Get("x-csrf-token")
+		if lastPostToken != freshToken {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":"forbidden"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	sess := &config.Session{CSRFToken: "stale-csrf"}
+	c, _ := New(sess, nil)
+	c.BaseURL = srv.URL
+
+	var out struct {
+		Ok bool `json:"ok"`
+	}
+	if err := c.DoJSON(context.Background(), http.MethodPost, "/api/cart", map[string]int{"q": 1}, &out); err != nil {
+		t.Fatalf("DoJSON should succeed after CSRF refresh: %v", err)
+	}
+	if !out.Ok {
+		t.Fatal("expected ok:true after retry")
+	}
+	if postAttempts != 2 {
+		t.Errorf("expected exactly 2 POST attempts (403 then retry), got %d", postAttempts)
+	}
+	if lastPostToken != freshToken {
+		t.Errorf("retry used token %q, want %q", lastPostToken, freshToken)
+	}
+	if sess.CSRFToken != freshToken {
+		t.Errorf("session token = %q, want refreshed %q", sess.CSRFToken, freshToken)
+	}
+	if !c.SyncSession() {
+		t.Error("refreshed CSRF should mark the session dirty for persistence")
+	}
+}
+
+// TestDoJSONForbiddenSurvivesWhenTokenAlreadyFresh verifies we do not loop or
+// mask a genuine 403: if the homepage returns the same token we already hold,
+// the original 403 is surfaced (→ "re-import HAR").
+func TestDoJSONForbiddenSurvivesWhenTokenAlreadyFresh(t *testing.T) {
+	const token = "current-token"
+	var postAttempts int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			_, _ = w.Write([]byte(`<html><script>window.__INITIAL_STATE__={"session":{"csrf":{"token":"` + token + `"}}};</script></html>`))
+			return
+		}
+		postAttempts++
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"forbidden"}`))
+	}))
+	defer srv.Close()
+
+	sess := &config.Session{CSRFToken: token}
+	c, _ := New(sess, nil)
+	c.BaseURL = srv.URL
+
+	err := c.DoJSON(context.Background(), http.MethodPost, "/api/cart", map[string]int{"q": 1}, nil)
+	he, ok := err.(*HTTPError)
+	if !ok || !he.Expired() {
+		t.Fatalf("expected expired HTTPError, got %v", err)
+	}
+	if postAttempts != 1 {
+		t.Errorf("expected no retry when token unchanged, got %d attempts", postAttempts)
+	}
+}
+
 func TestSyncSessionFoldsCookiesAndCSRF(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("x-csrf-token", "rotated-2")
