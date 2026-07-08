@@ -8,7 +8,7 @@ Unofficial, agent-friendly CLI for `compraonline.bonpreuesclat.cat` — search t
 
 MVP complete: **Read + Cart + Slots/Shipping + read-only orders + `checkout open` handoff**. Order placement (Braintree 3DS) is deliberately out of scope — the CLI leaves a fully-configured cart and the user completes checkout in the web/app.
 
-API surface is reverse-engineered and documented in [`docs/bonpreu-api-discovery.md`](docs/bonpreu-api-discovery.md); reusable patterns from similar projects in [`docs/reference-mercadona-clis.md`](docs/reference-mercadona-clis.md).
+API surface is reverse-engineered and documented in [`docs/bonpreu-api-discovery.md`](docs/bonpreu-api-discovery.md); reusable patterns from similar projects in [`docs/reference-mercadona-clis.md`](docs/reference-mercadona-clis.md). A static APK pass (decompiled Android app, no live capture yet) turned up candidate endpoints for the order-placement blocker plus reviews/shopping-lists/promotions — see [`docs/reference-bonpreu-app-feasibility.md`](docs/reference-bonpreu-app-feasibility.md) — and revealed the app (and likely the whole backend) is a white-labeled build of **Ocado Smart Platform**.
 
 ## Quickstart
 

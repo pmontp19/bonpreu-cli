@@ -3,6 +3,8 @@
 **Last Updated:** 2026-06-30
 **Status:** In Progress - Slot reservation CONFIRMED, Checkout flow mapped to 3DS page, order placement endpoint pending (likely server-side after payment)
 
+> **2026-07-07/08:** APK decompile + a live MITM-captured session on the official Android app (see [`docs/reference-bonpreu-app-feasibility.md`](reference-bonpreu-app-feasibility.md)) confirmed the app talks to a **separate mobile gateway** (`api.bpe.osp.tech/rocket-osp/...`, distinct from every `www.compraonline.bonpreuesclat.cat/api/...` endpoint below) with its **own auth scheme that includes a refresh token** (`POST v1/authorize` → `{token, refreshToken}`) — something the web's cookie-only session doesn't have. Confirmed live: loyalty (clean JSON, no HTML scrape needed), order history, wallet (different shape than the web's), shopping-list read, and the full checkout-summary/payment-method screen. Still unconfirmed: the actual order-creation call (`v2/checkout`/`complete3ds`/`payment/complete`) — the live session deliberately stopped before submitting a real payment. Also confirmed: the app is a white-labeled **Ocado Smart Platform** build — explains the `ecomslots`/`checkoutwalk`/`webproductpagews` naming below.
+
 ---
 
 ## ⚡ 2026-06-30 Live verification (browser capture, logged-in session)
@@ -675,8 +677,8 @@ GET /api/webproductpagews/v5/product-pages?limit=30&offset=0&tag=web&tag=lihp
     "bannerId": "...",
     "defaultWalletItem": true,
     "details": {
-      "lastFourDigits": "5016",
-      "bin": "540205",
+      "lastFourDigits": "XXXX",
+      "bin": "XXXXXX",
       "cardType": "MasterCard",
       "expiryMonth": "06",
       "expiryYear": "2026",
@@ -864,20 +866,20 @@ GET /api/search/v1/suggestions/primary?searchTerm=&limit=20000&regionId=00000000
 - [x] **Checkout workflow** - FOUND: `GET /api/checkoutwalk/v1/checkout-walk`
 - [x] **Slot extension** - FOUND: `POST /api/ecomslots/v1/slots/extend`
 - [x] **Payment flow identified** - Braintree 3DS via pspweb.compraonline.bonpreuesclat.cat
-- ⚠️ **Order placement endpoint** - STILL THE ONLY BLOCKER: server-side after 3DS payment. Deliberately OUT OF SCOPE for the CLI (user completes order in web/app).
+- ⚠️ **Order placement endpoint** - STILL THE ONLY BLOCKER: server-side after 3DS payment. Deliberately OUT OF SCOPE for the CLI (user completes order in web/app). Mobile-app candidate paths, confirmed to *exist* (named in the app's Retrofit interfaces) but still unconfirmed live — a real session was walked up to the checkout-summary/payment-method screen and deliberately stopped before submitting payment (see `reference-bonpreu-app-feasibility.md` §4/§6): `POST v2/checkout`, `POST v1/checkout/complete3ds`, `POST v1/payment/complete`.
 
 ### 🟡 Important (Nice to have)
-- [x] OpenID Connect login flow reverse engineering - COMPLETE
-- [ ] Token refresh mechanism
+- [x] OpenID Connect login flow reverse engineering - COMPLETE (web)
+- [x] Token refresh mechanism — CONFIRMED to exist on the **mobile** gateway (`api.bpe.osp.tech`, separate auth from the web cookie session): `POST v1/authorize` returns `{token, refreshToken}` live-verified 2026-07-08. `POST v1/authorize/refresh` itself didn't fire live (token never aged out) but is named in the app's routes. Web flow still has no client-side refresh at all. Adopting this for the CLI needs a second, mobile-specific auth transport — see `reference-bonpreu-app-feasibility.md` §3/§6.
 - [ ] WAF token generation & refresh
-- [ ] Favorites/watchlist management
-- [ ] Shopping lists API
-- [ ] Promotions/offer details API
+- [x] Favorites/watchlist management - shipped via web scraping (`bonpreu favorites list`); APK shows a cleaner native `GET v3/favorites` (still unconfirmed live)
+- [x] Shopping lists API — `GET v1/product-lists/basic?includingProduct={id}` CONFIRMED live 2026-07-08 (returns `[]` for an account with none yet); `POST v1/product-lists` (create) attempted live but didn't confirm — see `reference-bonpreu-app-feasibility.md` §4/§6
+- [ ] Promotions/offer details API — candidate `PromotionRestClient`/`PromotionSelectorRestClient` paths in `reference-bonpreu-app-feasibility.md`, unconfirmed
 
 ### 🟢 Optional (Enhancement)
-- [ ] Product reviews/ratings
+- [ ] Product reviews/ratings — candidate `ProductReviewRestClient` paths in `reference-bonpreu-app-feasibility.md`, unconfirmed (didn't trigger live — product used in the test session had no reviews UI)
 - [ ] User profile endpoints
-- [ ] Delivery pass (BPAS) management
+- [x] Delivery pass (BPAS) management — `GET v1/user/subscriptions/delivery/active` CONFIRMED live 2026-07-08: `{messages: {advertisingMessage, marketingMessage, isFreeTrial}, allSubscriptionsLink, customerHasAddress}`
 - [ ] Recent searches history
 - [ ] Analytics/tracking endpoints
 
