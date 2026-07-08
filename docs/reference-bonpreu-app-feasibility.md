@@ -2,7 +2,7 @@
 
 Decompiled `com.bonpreu.mobile.android` v0.461.0 (`.xapk`, source: APKPure) with `jadx`, then installed it on a rooted Android emulator (system-trusted mitmproxy CA already provisioned on the AVD from an earlier Android app RE session) and captured live traffic for a real, logged-in account. Session dates: 2026-07-07 (static decompile) and 2026-07-08 (live capture). This follows a standard rooted-emulator + system-trusted-CA MITM playbook: decompile with `jadx`, grep the Retrofit route annotations for a static route table, then confirm hosts/auth/bodies against live traffic.
 
-**Verdict: the mobile app talks to a completely separate backend gateway from the website, with its own auth scheme that includes a refresh token — something the web flow doesn't have.** Confirmed live: host, full header set, the auth flow (including `refreshToken`), and ~40 endpoints covering loyalty, order history, shopping lists, wallet, and the checkout-summary/payment-method screen. Deliberately **not** confirmed: `v2/checkout`, `complete3ds`, `payment/complete` — the live session stopped at the checkout-summary screen and never submitted a real payment, so the actual order-creation call is still unconfirmed (see §6).
+**Verdict: the mobile app talks to a completely separate backend gateway from the website, with its own auth scheme that includes a refresh token — something the web flow doesn't have.** Confirmed live: host, full header set, the auth flow (including `refreshToken`), and ~40 endpoints covering loyalty, order history, shopping lists, wallet, and the checkout-summary/payment-method screen. `v2/checkout`/`complete3ds`/`payment/complete` were deliberately **not** triggered live (stopped before submitting a real payment) — but a follow-up static pass recovered their exact request/response shapes from the decompiled Kotlin data classes (§4.1), including the fact that `v2/checkout`'s response is a 3-way branch (immediate completion, a web 3DS redirect, or a Braintree client-SDK step) — so the remaining gap is narrower than "unknown bodies," it's specifically "which branch fires, and can the Braintree nonce be reproduced."
 
 ---
 
@@ -83,7 +83,33 @@ Everything below actually fired during the session and returned a real response 
 - `GET v2/wallet` → `{"externalWallet": false, "walletItems": [{"walletItemId", "fundingInstrumentId", "default", "method": "CARD_TOKEN", "methodV2": "CARDS", "title": "<last 4 digits>", "type": "MasterCard", "expiryMonth", "expiryYear", "expired": true}]}` — **note this is structurally different from the web's confirmed `GET /api/walletservice/v3/wallet-items`** (field names `title`/`type` vs. the web's `details.lastFourDigits`/`details.cardType`, no `pspName`) — two independently-shaped wallet views onto presumably the same underlying vault.
 - Slots: `GET v1/slot/configuration`, `GET v4/slot/next-available`, `POST v4/slot`, `GET v3/delivery-destinations/{id}/slots`, `POST v3/delivery-destinations/{id}/slots/continuation`, `POST v2/delivery/locations`.
 
-**Deliberately not triggered — still unconfirmed:** `POST v2/checkout` (order creation), `POST v1/checkout/complete3ds`, `POST v1/payment/complete`. The live session stopped at the checkout-summary/payment-method screen (both saved cards showed as expired, "Finalitza la compra" was visible but never tapped) specifically to avoid submitting a real charge. Everything about these three routes is still exactly what §4.1 of the pre-live version of this doc said from static analysis alone — request/response DTOs known by name (`CheckoutDto`/`Complete3DSDto`/`PaymentCompleteDto`), bodies unknown.
+**Deliberately not triggered — still unconfirmed live:** `POST v2/checkout` (order creation), `POST v1/checkout/complete3ds`, `POST v1/payment/complete`. The live session stopped at the checkout-summary/payment-method screen (both saved cards showed as expired, "Finalitza la compra" was visible but never tapped) specifically to avoid submitting a real charge. A follow-up static pass (2026-07-08, reading the Kotlin `data class` fields jadx already decompiled — zero risk, no traffic) recovered the exact request/response shapes:
+
+### 4.1 Order placement — full DTO shapes (static, unconfirmed live)
+
+`CheckoutDto` — request body for `POST v2/checkout`:
+```
+{
+  quickAddDto: { slotId, cartId } | null,
+  paymentMethodDto: { instrumentId, toSave: bool, type, group,
+                       instalmentsOptions: { retailerFinancingPlanId, financingProviderId, retailerFinancingProviderId } | null } | null,
+  paymentCheckIds: [string] | null,
+  billingAddressId: string | null
+}
+```
+
+`CheckoutResultDto` is a **sealed type** — `v2/checkout` returns exactly one of three shapes, which is the actual branching logic of the whole payment flow:
+1. **`CheckoutBraintreeDto`** `{ parameterToken, pspSession }` — a Braintree client session is needed next (client-side SDK step, then presumably `payment/complete`).
+2. **`CheckoutCompleteDto`** — **the order is placed immediately**, no further step: `{ orderId, paymentInfo, cutoffDate, items, products[], loyalty, charges[], vouchers[], delta, deliveryPass, retailPrice, finalPrice, totalPrice, totalPriceTaxation, isEdit, taxesTotals, summaryDto, itemPriceAfterPromos, isEditable, delivery, billingAddressDetails, grouping, multiPaymentInfo, missedPromotions[], isSeasonalSlot }`.
+3. **`PspWeb3DSChallengeRequestedDto`** `{ psp, pspWebUrl, successRedirect, successParam, errorRedirect, cancelledRedirect }` — a PSD2/3DS web challenge is required: open `pspWebUrl` in a browser/webview, the bank redirects to `successRedirect` (carrying `successParam`) or `errorRedirect`/`cancelledRedirect`.
+
+`Complete3DSDto` — request body for `POST v1/checkout/complete3ds` (the step after a `PspWeb3DSChallengeRequestedDto` challenge resolves): `{ psp, paymentId, details: [{key, value}] }` → response `CheckoutCompleteDto` (same shape as branch 2 above).
+
+`PaymentCompleteDto` — request body for `POST v1/payment/complete` (the step after a `CheckoutBraintreeDto` branch, i.e. finishing a Braintree client-SDK payment): `{ paramToken, payload: { nonce, pspName, frictionless: bool | null } }` → response `{ resultToken }`. `nonce` reads as a Braintree client-SDK payment-method nonce — this step **requires running Braintree's client SDK** (or replicating its device-fingerprinting + tokenization logic) to produce a valid nonce, not just an HTTP call with a hand-built body.
+
+Also recovered: `PaymentMethodUpdateDto` (body for `PUT checkout-summary`, switches payment method mid-checkout) = `{ paymentMethodGroup: { paymentMethodGroupId, financingProviderId } }`; `ShippingGroupTypeDto` = `{ shippingGroupType }`; `TermsAndConditionsDto` = `{ termsAndConditions: [...], gdprPrivacyPolicyUrl }`; `CartCheckoutRestrictionsDto` = `{ unavailableItems: [...], cartSplitRequired }`; and the full `CartCheckoutSummaryDto` schema (30+ fields — `items`, `totals`, `checkout`, `vouchers`, `loyalty`, `orderId`, `bufferReservationMessageDto` (the PSD2 modal — matches the live capture), `specifiedPaymentMethod`, `isCheckedOut`, `isOrderEdit`, `region`, `financingOptions`, `itemGroups`, `sellers`, `selectedPaymentMethodGroup`, `paymentCheckoutSummary`, `pricingNotifications`, `toggleablePromotions`, etc. — most fields nullable, so the live capture's smaller JSON is consistent with this schema, just with a lot of nulls for an account with no active promotions/financing).
+
+**What this changes about the order-placement gap:** the HTTP shapes are now fully known, but branch 1 (`CheckoutBraintreeDto` → `payment/complete`) depends on a **Braintree client SDK nonce** that can't be hand-built from an HTTP client alone — same category of blocker as bonpreu-cli's existing 3DS-in-browser limitation, just one level deeper (Braintree tokenization/device-fingerprinting, not just a redirect). Branch 3 (`PspWeb3DSChallengeRequestedDto`) is a plain browser redirect, same shape as the web's existing 3DS flow — that branch is realistically scriptable (open `pspWebUrl`, capture the redirect) without any SDK. Which branch a given checkout hits (Braintree vs. web 3DS vs. immediate completion) is presumably decided server-side per payment method/PSP — still unconfirmed live which branch Bonpreu's account/cards would actually hit.
 
 ## 5. What the static-analysis pass got wrong
 
@@ -91,7 +117,7 @@ The original version of this doc guessed `<Kotlin-package-derived-name>` ≈ `<A
 
 ## 6. Next steps
 
-- **Order creation is still the one gap.** Confirming `v2/checkout`/`complete3ds`/`payment/complete` requires either (a) a live account with a *non-expired* saved card willing to complete a real small purchase, or (b) finding a way to observe the request shape without completing payment (e.g. the app may validate/build the request body client-side before sending — worth checking the jadx `CheckoutDto` Kotlin data class fields statically, which this session didn't get to). Static DTO field extraction (jadx already has the decompiled classes) is the cheaper next move before attempting another live pass.
-- **`POST v1/authorize/refresh`** never fired (token didn't age out during the session). Worth confirming its shape if a future session runs long enough, or by statically reading `LoginRestClient`'s Kotlin data classes.
+- **Order creation: HTTP shapes now known (§4.1), live confirmation still open.** The remaining unknown is behavioral, not schema: which `CheckoutResultDto` branch a real checkout hits, and — if it's the `CheckoutBraintreeDto` branch — reproducing Braintree's client-SDK nonce generation, which is a real engineering task (SDK integration or protocol reverse-engineering), not just an HTTP body to fill in. Confirming this needs a live account with a non-expired card willing to complete a real purchase.
+- **`POST v1/authorize/refresh`** never fired (token didn't age out during the session). Worth confirming its shape if a future session runs long enough, or by statically reading `LoginRestClient`'s Kotlin data classes (not yet done).
 - **Shopping-list creation** (`POST v1/product-lists`) didn't confirm live despite the UI attempt — retry with more careful UI interaction, or just synthesize the request from the DTO shape in jadx and test directly.
 - Any of the confirmed-live paths above that get implemented in the CLI need their **own auth path** (mobile `token`/`refreshToken`, not the existing cookie jar) — this is an architecture decision (a second `internal/client`-style transport), not just a docs update, since bonpreu-cli's current session model is entirely cookie-based.

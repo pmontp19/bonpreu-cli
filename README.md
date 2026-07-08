@@ -110,6 +110,18 @@ pbpaste | bonpreu import-curl -        # or: bonpreu import-curl --file req.txt
 
 The CSRF token rotates server-side; the CLI refreshes it automatically from the homepage when a mutation is rejected, so a stale token no longer forces a re-import — only an expired *account* session does.
 
+## Disclaimer
+
+This project is an **independent, unofficial** tool provided for **educational and research purposes only**.
+
+- **No affiliation.** This project is not affiliated with, endorsed by, or sponsored by Bonpreu, Esclat, or Ocado. "Bonpreu", "Esclat", and any other product names, logos, or trademarks are property of their respective owners and are referenced here solely to describe compatibility.
+- **Reverse engineering.** The API surface used by this CLI was discovered through reverse engineering (analysis of the website's HTTP traffic and a decompiled Android APK). No proprietary source code is included; only interoperability with the public-facing HTTP endpoints the official clients already use.
+- **Use responsibly.** You are responsible for complying with the terms of service of the platform, applicable law, and any rate limits. Do not use this tool to abuse the service, scrape at scale, or automate in ways that impose undue load. Keep request rates sane.
+- **Account risk.** Automating access to your own account may violate the platform's terms and could, in principle, lead to suspension or termination of your account by the provider. You assume that risk.
+- **No warranty.** This software is provided "as is", without warranty of any kind, express or implied. The authors are not liable for any damages, account action, or data loss arising from its use.
+
+If you represent the trademark holder and have concerns, please open an issue.
+
 ## Layout
 
 ```

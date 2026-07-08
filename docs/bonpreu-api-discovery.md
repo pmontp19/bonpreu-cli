@@ -866,7 +866,7 @@ GET /api/search/v1/suggestions/primary?searchTerm=&limit=20000&regionId=00000000
 - [x] **Checkout workflow** - FOUND: `GET /api/checkoutwalk/v1/checkout-walk`
 - [x] **Slot extension** - FOUND: `POST /api/ecomslots/v1/slots/extend`
 - [x] **Payment flow identified** - Braintree 3DS via pspweb.compraonline.bonpreuesclat.cat
-- ⚠️ **Order placement endpoint** - STILL THE ONLY BLOCKER: server-side after 3DS payment. Deliberately OUT OF SCOPE for the CLI (user completes order in web/app). Mobile-app candidate paths, confirmed to *exist* (named in the app's Retrofit interfaces) but still unconfirmed live — a real session was walked up to the checkout-summary/payment-method screen and deliberately stopped before submitting payment (see `reference-bonpreu-app-feasibility.md` §4/§6): `POST v2/checkout`, `POST v1/checkout/complete3ds`, `POST v1/payment/complete`.
+- ⚠️ **Order placement endpoint** - STILL THE ONLY BLOCKER, but the shape is now fully mapped: `POST v2/checkout` (mobile gateway), request/response DTOs recovered from the app's decompiled Kotlin classes (`reference-bonpreu-app-feasibility.md` §4.1). Its response is a 3-way branch — immediate completion, a plain web 3DS redirect (scriptable), or a Braintree client-SDK step (`payment/complete`, needs a real Braintree nonce — not just an HTTP body). A real session was walked up to the checkout-summary/payment-method screen and deliberately stopped before submitting payment, so which branch actually fires for a real card is still unconfirmed. Deliberately OUT OF SCOPE for the CLI regardless (user completes order in web/app).
 
 ### 🟡 Important (Nice to have)
 - [x] OpenID Connect login flow reverse engineering - COMPLETE (web)
