@@ -59,7 +59,18 @@ The `authorization` token is **not a JWT** (no `.`-separated header/payload/sign
 
 **This is the answer to `bonpreu-api-discovery.md`'s "Token refresh mechanism" pending item.** The web flow genuinely has no client-side refresh (cookies only, confirmed there). The **mobile** flow issues a real `refreshToken` alongside the session `token` — a `POST /rocket-osp/v1/authorize/refresh` route exists per the static analysis (§2/old §4.3) but didn't fire during this session (the token never got old enough to need it), so its request/response shape is still unconfirmed. If bonpreu-cli ever adopts this mobile auth path, it would need one initial browser-based login (the same browser-then-paste-the-code pattern `gh`/Claude Code/the Codex CLI use) but could then refresh indefinitely instead of requiring repeated `import-curl`.
 
-**Device registration** (fires once per fresh install, before login): `GET /v1/mobileDevice/{deviceId}` → `404 {"reason": "DEVICE_NOT_REGISTERED"}` → `PUT /v1/mobileDevice/{deviceId}` (30-byte binary body, not JSON) → `201` with the body `"https://api-euw1-mobilecustomerrocketws.bpe.osp.tech/v1/mobileDevice/{deviceId}"` → subsequent `GET /v1/mobileDevice/{deviceId}` now returns `200 {"token": "<opaque>"}` — a **third**, device-bound token distinct from the user's `token`/`refreshToken` pair. Its purpose wasn't investigated further this session (not blocking for anything on the CLI's roadmap).
+**Device registration** (fires once per fresh install, before login): `GET /v1/mobileDevice/{deviceId}` → `404 {"reason": "DEVICE_NOT_REGISTERED"}` → `PUT /v1/mobileDevice/{deviceId}` (30-byte binary body, not JSON) → `201` with the body `"https://api-euw1-mobilecustomerrocketws.bpe.osp.tech/v1/mobileDevice/{deviceId}"` → subsequent `GET /v1/mobileDevice/{deviceId}` now returns `200 {"token": "<opaque>"}` — a **third**, device-bound token distinct from the user's `token`/`refreshToken` pair.
+
+**Its purpose (static analysis, 2026-07-08): it's required for token refresh.** `LoginRestClient` has a fourth method beyond `authorize/uris` and `authorize`:
+```
+POST v1/authorize/refresh
+  @Header("Authorization") <device token>     ← NOT the session "token:..." — the Kotlin param is literally named deviceToken
+  @Body { "refreshToken": "<the refreshToken from login>" }
+  → { "token": "...", "refreshToken": "..." | null }
+```
+So refreshing isn't just "POST the refreshToken" — it authenticates the *refresh call itself* with the device token, not the (expired) session token, and needs the device-registration dance run alongside login. The response's `refreshToken` is nullable, so it's unconfirmed whether it rotates every refresh or can be reused. A CLI implementation would need to persist three values (session token, refreshToken, device token), not just one.
+
+**Live attempt (2026-07-08, one deliberate try, no retry loop):** replayed the raw device token as `Authorization` (matching the app's call site — no wrapping observed there) with a minimal header set (missing `sessionsequenceno`/`analytics-session-id`/`accept-currency`/`accept-language`, which every other live-confirmed call always carries) → **`500`, empty body**. Inconclusive: not a clean `401`/`403` (wrong auth format/rejected token) and not a `200` (works), so this neither confirms nor rules out the mechanism — most likely candidate explanation is the missing headers, not a fundamentally wrong approach. Still open.
 
 ## 4. Confirmed live endpoints (`api.bpe.osp.tech/rocket-osp/...`)
 
